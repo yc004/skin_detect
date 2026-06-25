@@ -664,13 +664,19 @@ llm_client = None
 llm_model = ""
 
 def _load_config() -> dict:
-    """Load config.json from project root. Returns empty dict if not found."""
-    config_path = Path(__file__).parent / "config.json"
-    if config_path.exists():
-        try:
-            return json.loads(config_path.read_text())
-        except Exception as e:
-            print(f"[WARN] Failed to parse config.json: {e}")
+    """Load config.json (or config.example.json) from project root."""
+    for name in ["config.json", "config.example.json"]:
+        config_path = Path(__file__).parent / name
+        if config_path.exists():
+            try:
+                cfg = json.loads(config_path.read_text())
+                # Skip if it's the example placeholder
+                api_key = cfg.get("llm", {}).get("api_key", "")
+                if "your-api-key" in api_key or "sk-your" in api_key:
+                    continue  # skip placeholder, try next file
+                return cfg
+            except Exception:
+                continue
     return {}
 
 
