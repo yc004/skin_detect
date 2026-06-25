@@ -376,6 +376,86 @@ def api_chat():
 
 
 # ============================================================
+# Routes — Grad-CAM
+# ============================================================
+
+@app.route("/api/gradcam", methods=["POST"])
+def api_gradcam():
+    """Generate Grad-CAM heatmap for the uploaded image."""
+    if MODEL is None:
+        return jsonify({"error": "模型未加载"}), 500
+
+    file = request.files.get("image")
+    if not file:
+        return jsonify({"error": "未上传图片"}), 400
+
+    img_bytes = file.read()
+    img_np = np.frombuffer(img_bytes, np.uint8)
+    img_bgr = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        return jsonify({"error": "无法解析图片"}), 400
+
+    h, w = img_bgr.shape[:2]
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    tensor = TRANSFORM(img_rgb).unsqueeze(0).to(DEVICE)
+
+    # Find last conv layer in stages.3
+    target_layer = None
+    for name, module in MODEL.named_modules():
+        if "stages.3" in name and isinstance(module, torch.nn.Conv2d):
+            target_layer = module
+
+    if target_layer is None:
+        return jsonify({"error": "无法定位目标层"}), 500
+
+    activations = {}
+    gradients = {}
+
+    def forward_hook(m, inp, out):
+        activations["v"] = out
+
+    def backward_hook(m, g_in, g_out):
+        gradients["v"] = g_out[0]
+
+    fh = target_layer.register_forward_hook(forward_hook)
+    bh = target_layer.register_full_backward_hook(backward_hook)
+
+    MODEL.zero_grad()
+    logits = MODEL(tensor)
+    pred_idx = logits.argmax(dim=1).item()
+    logits[0, pred_idx].backward()
+
+    fh.remove()
+    bh.remove()
+
+    act = activations["v"].detach()
+    grad = gradients["v"].detach()
+
+    weights = grad.mean(dim=(2, 3), keepdim=True)
+    cam = (weights * act).sum(dim=1).squeeze(0)
+    cam = F.relu(cam)
+    if cam.max() > 0:
+        cam = cam / cam.max()
+
+    cam = cam.cpu().numpy()
+    cam = cv2.resize(cam, (w, h))
+    cam = np.uint8(255 * cam)
+
+    heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+    overlay = cv2.addWeighted(img_bgr, 0.4, heatmap, 0.6, 0)
+
+    # Add label
+    class_en = CLASS_NAMES[pred_idx]
+    class_zh = app.config["CLASS_NAMES_ZH"].get(class_en, class_en)
+    cv2.putText(overlay, f"Grad-CAM: {class_zh}", (10, 28),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
+
+    _, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    img_b64 = base64.b64encode(buf).decode("utf-8")
+    return jsonify({"heatmap": f"data:image/jpeg;base64,{img_b64}", "class": class_zh, "class_en": class_en})
+
+
+# ============================================================
 # Routes — Models list
 # ============================================================
 

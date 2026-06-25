@@ -232,9 +232,41 @@ footer {
   50% { opacity: 1; }
 }
 
-/* Loading overlay on image */
-.result-image { margin-top: 12px; }
-.result-image img { max-width: 100%; border-radius: 8px; }
+/* Toggle */
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #ccc;
+  cursor: pointer;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  user-select: none;
+}
+.toggle-label:hover { border-color: var(--accent); }
+.toggle-label input { accent-color: var(--accent); }
+
+/* Grad-CAM result */
+.cam-result {
+  margin-top: 10px;
+  text-align: center;
+  background: #111;
+  border-radius: 8px;
+  padding: 4px;
+}
+.cam-result img {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 6px;
+}
+.cam-label {
+  display: block;
+  font-size: 11px;
+  color: #ff9800;
+  padding: 4px 0;
+}
 
 /* Responsive */
 @media (max-width: 900px) {

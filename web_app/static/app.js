@@ -4,6 +4,7 @@
 
 let classificationCtx = null;  // Store classification context for chat
 let activeAbortController = null;  // Cancel previous SSE streams
+let lastUploadedFile = null;  // Keep file reference for Grad-CAM re-fetch
 
 // Color map
 const RISK_COLORS = { HIGH: '#ef5350', MEDIUM: '#ff9800', LOW: '#66bb6a' };
@@ -54,8 +55,14 @@ btnClear.addEventListener('click', resetAll);
 function handleFile(file) {
   if (!file.type.startsWith('image/')) return;
 
+  lastUploadedFile = file;
+
   // Cancel any active SSE streams from previous classification
   abortActiveStreams();
+
+  // Reset Grad-CAM
+  document.getElementById('camResult').style.display = 'none';
+  document.getElementById('chkGradCAM').checked = false;
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -63,10 +70,10 @@ function handleFile(file) {
     previewImage.classList.remove('preview-hidden');
     uploadPlaceholder.style.display = 'none';
     btnClear.style.display = 'inline-block';
+    document.getElementById('toggleAttn').style.display = '';
     classifyImage(file);
   };
   reader.readAsDataURL(file);
-  // Reset file input so the same file can be re-selected
   fileInput.value = '';
 }
 
@@ -84,6 +91,10 @@ function resetAll() {
   document.getElementById('chatMessages').innerHTML = '<div class="chat-placeholder">分类完成后可在此咨询AI</div>';
   document.getElementById('chatInput').disabled = true;
   document.getElementById('btnSend').disabled = true;
+  document.getElementById('camResult').style.display = 'none';
+  document.getElementById('toggleAttn').style.display = 'none';
+  document.getElementById('chkGradCAM').checked = false;
+  lastUploadedFile = null;
 }
 
 
@@ -316,7 +327,6 @@ async function sendChat() {
 }
 
 function addChatMsg(role, content) {
-  // Remove placeholder
   const placeholder = chatMessages.querySelector('.chat-placeholder');
   if (placeholder) placeholder.remove();
 
@@ -326,4 +336,40 @@ function addChatMsg(role, content) {
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
   return div;
+}
+
+// ============================================================
+// Grad-CAM Toggle
+// ============================================================
+
+const chkGradCAM = document.getElementById('chkGradCAM');
+const camResult = document.getElementById('camResult');
+const camImage = document.getElementById('camImage');
+const camLabel = document.getElementById('camLabel');
+
+chkGradCAM.addEventListener('change', async () => {
+  if (chkGradCAM.checked && lastUploadedFile) {
+    camResult.style.display = '';
+    camLabel.textContent = '正在生成注意力热力图...';
+    await fetchGradCAM(lastUploadedFile);
+  } else {
+    camResult.style.display = 'none';
+  }
+});
+
+async function fetchGradCAM(file) {
+  const formData = new FormData();
+  formData.append('image', file);
+  try {
+    const resp = await fetch('/api/gradcam', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.heatmap) {
+      camImage.src = data.heatmap;
+      camLabel.textContent = `🔥 注意力区域: ${data.class}`;
+    } else {
+      camLabel.textContent = '生成失败: ' + (data.error || '未知错误');
+    }
+  } catch (err) {
+    camLabel.textContent = '生成失败: ' + err.message;
+  }
 }

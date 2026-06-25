@@ -28,9 +28,15 @@
       <div class="image-actions">
         <button id="btnUpload" class="btn btn-outline">选择图片</button>
         <button id="btnClear" class="btn btn-outline" style="display:none">清除</button>
+        <label class="toggle-label" id="toggleAttn" style="display:none">
+          <input type="checkbox" id="chkGradCAM"> 🔥 注意力热力图
+        </label>
       </div>
     </div>
-    <div id="resultImage" class="result-image"></div>
+    <div id="camResult" class="cam-result" style="display:none">
+      <img id="camImage" alt="Grad-CAM">
+      <span id="camLabel" class="cam-label"></span>
+    </div>
   </section>
 
   <!-- Center Panel: Classification Result -->
