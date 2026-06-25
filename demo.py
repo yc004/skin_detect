@@ -338,7 +338,7 @@ def _build_report(predictions: list, info: dict) -> str:
         <p style="color:#888; font-size:11px; margin:0 0 12px 0;">{variant_str}</p>
 
         <div style="padding:12px; background:{bg}; border-radius:8px; margin-bottom:15px; border-left:4px solid {border};">
-            <div style="font-size:15px; font-weight:bold; color:{border};">{risk_title}: {top['class']}</div>
+            <div style="font-size:15px; font-weight:bold; color:{border};">{risk_title}: {top.get('class_zh', top['class'])}</div>
             <p style="color:#bbb; margin:4px 0 0 0; font-size:12px;">{risk_msg}</p>
         </div>
 
