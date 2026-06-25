@@ -27,6 +27,10 @@ results/
 .DS_Store
 Thumbs.db
 
+# Config (contains API keys)
+config.json
+
 # Gradio
+.gradio/
 gradio_cached_examples/
 *.pkl

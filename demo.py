@@ -9,9 +9,13 @@ Features:
   - Grad-CAM heatmap, batch analysis, risk triage
 
 Usage:
-    python demo.py                                    # built-in KB only
-    python demo.py --api-key sk-xxx                   # enable LLM
+    python demo.py                              # reads config.json
+    python demo.py --api-key sk-xxx             # override API key
     python demo.py --api-key sk-xxx --api-base https://api.openai.com/v1
+
+Config file (config.json):
+    {"llm": {"api_key": "sk-xxx", "api_base": "...", "api_model": "gpt-4o-mini"}}
+    CLI arguments override config file values.
 """
 
 import sys
@@ -659,18 +663,33 @@ def build_ui(models: list):
 llm_client = None
 llm_model = ""
 
+def _load_config() -> dict:
+    """Load config.json from project root. Returns empty dict if not found."""
+    config_path = Path(__file__).parent / "config.json"
+    if config_path.exists():
+        try:
+            return json.loads(config_path.read_text())
+        except Exception as e:
+            print(f"[WARN] Failed to parse config.json: {e}")
+    return {}
+
+
 def main():
     global llm_client, llm_model
+
+    # Load config file first (lower priority than CLI)
+    cfg = _load_config()
+    llm_cfg = cfg.get("llm", {})
 
     parser = argparse.ArgumentParser(description="Skin Disease Classification Demo")
     parser.add_argument("--model", type=str, default=None, help="Model checkpoint path")
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--share", action="store_true", help="Create public Gradio link")
-    parser.add_argument("--api-key", type=str, default=None,
-                        help="OpenAI-compatible API key for LLM suggestions")
-    parser.add_argument("--api-base", type=str, default="https://api.openai.com/v1",
-                        help="API base URL (supports OpenAI / vLLM / Ollama / local LLM)")
-    parser.add_argument("--api-model", type=str, default="gpt-4o-mini",
+    parser.add_argument("--api-key", type=str, default=llm_cfg.get("api_key"),
+                        help="OpenAI-compatible API key (falls back to config.json)")
+    parser.add_argument("--api-base", type=str, default=llm_cfg.get("api_base", "https://api.openai.com/v1"),
+                        help="API base URL")
+    parser.add_argument("--api-model", type=str, default=llm_cfg.get("api_model", "gpt-4o-mini"),
                         help="LLM model name")
     args = parser.parse_args()
 
@@ -680,8 +699,8 @@ def main():
         llm_model = args.api_model
         print(f"🤖 LLM enabled: {args.api_model} @ {args.api_base}")
     else:
-        print("💡 提示: 使用 --api-key sk-xxx 启用AI大模型建议功能")
-        print("   支持 OpenAI / 本地模型 (Ollama/vLLM) 等兼容接口")
+        print("💡 提示: 创建 config.json 或使用 --api-key 启用AI大模型")
+        print("   复制 config.example.json 为 config.json 并填入API key")
 
     models = find_models("runs")
     if args.model and not any(m["path"] == args.model for m in models):
