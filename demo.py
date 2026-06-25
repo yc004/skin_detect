@@ -263,17 +263,18 @@ def classify_batch(files, model_path, show_cam):
         logits = model(tensor)
         probs = F.softmax(logits, dim=1)
         top_prob, top_idx = probs.max(dim=1)
+        top_val = top_prob.item()
         name_en = class_names[top_idx.item()]
         name_zh = class_names_zh.get(name_en, name_en)
         risk = class_risk.get(name_en, "LOW")
         risk_counts[risk] += 1
 
         annotated = draw_classification_result(img, [
-            {"class": name_en, "class_zh": name_zh, "confidence": float(top_prob), "risk": risk}
+            {"class": name_en, "class_zh": name_zh, "confidence": top_val, "risk": risk}
         ], class_risk)
 
-        results.append((annotated, f"{Path(file_path).name}\n{name_zh} ({top_prob:.1%})"))
-        summary_parts.append(f"{Path(file_path).name}: {name_zh} ({top_prob:.1%}) [{risk}]")
+        results.append((annotated, f"{Path(file_path).name}\n{name_zh} ({top_val:.1%})"))
+        summary_parts.append(f"{Path(file_path).name}: {name_zh} ({top_val:.1%}) [{risk}]")
 
     summary = f"""
     <div style="padding:15px; background:#1a1a2e; border-radius:8px; color:#e0e0e0; font-family:sans-serif;">
