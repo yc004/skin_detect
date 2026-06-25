@@ -388,7 +388,7 @@ EMA 在推理时使用 shadow 权重，等效窗口约 1,000 步，在不增加�
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.65\textwidth]{img/model_improved.png}
+    \includegraphics[width=0.65\textwidth]{img/model_improve.png}
     \caption{改进模型架构（ConvNeXt V2 + GeM Pooling + EMA）。改进点：① 每个 block 新增 GRN 层；② AdaptiveAvgPool2d → GeM Pooling；③ 训练阶段引入 EMA 权重平滑。}
     \label{fig:architecture_improved}
 \end{figure}
