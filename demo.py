@@ -369,7 +369,7 @@ def _model_info_html(model_path: str) -> str:
     if cached is None:
         return "<div style='color:#666;font-size:12px;'>Loading...</div>"
 
-    _, _, _, _, _, info = cached
+    _, _, _, _, _, _, info = cached
 
     variant = info.get("model_name", "?").replace("_", " ").title()
     pooling = info.get("pooling", "?")
