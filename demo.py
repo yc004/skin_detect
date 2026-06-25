@@ -5,8 +5,7 @@ Skin Disease Classification — Gradio Interactive Demo.
 Features:
   - 22-class skin disease classification with ConvNeXt
   - Chinese + English bilingual display
-  - Built-in disease knowledge base (description, symptoms, treatment)
-  - Optional LLM API for personalized medical advice
+  - LLM API for disease description and treatment advice
   - Grad-CAM heatmap, batch analysis, risk triage
 
 Usage:
@@ -429,7 +428,7 @@ manager = ModelManager()
 # ============================================================
 
 @torch.no_grad()
-def classify(image, model_path, show_cam, top_k, use_llm):
+def classify(image, model_path, show_cam, top_k):
     if image is None:
         return None, _empty_report(), None, _model_info_html(model_path)
 
@@ -459,7 +458,7 @@ def classify(image, model_path, show_cam, top_k, use_llm):
 
     # LLM report
     llm_report = None
-    if use_llm and llm_client is not None:
+    if llm_client is not None:
         top = predictions[0]
         llm_report = llm_client.generate_report(
             top["class"], class_names_zh.get(top["class"], top["class"]),
@@ -509,23 +508,6 @@ def _build_report(predictions: list, info: dict, llm_report: str = None) -> str:
     }
     risk_title, risk_msg, bg, border = risk_cfg[risk]
 
-    # KB section for top prediction
-    kb_entry = DISEASE_KB.get(top["class"], {})
-    kb_html = ""
-    if kb_entry:
-        kb_html = f"""
-        <div style="margin-top:12px; padding:12px; background:#222; border-radius:8px; font-size:12px;">
-            <b style="color:#4fc3f7;">📋 疾病知识</b>
-            <p style="margin:6px 0 2px 0; color:#aaa;">📝 <b>概述</b></p>
-            <p style="margin:0 0 6px 0;">{kb_entry['overview']}</p>
-            <p style="margin:6px 0 2px 0; color:#aaa;">🩺 <b>症状</b></p>
-            <p style="margin:0 0 6px 0;">{kb_entry['symptoms']}</p>
-            <p style="margin:6px 0 2px 0; color:#aaa;">💊 <b>治疗</b></p>
-            <p style="margin:0 0 6px 0;">{kb_entry['treatment']}</p>
-            <p style="margin:6px 0 2px 0; color:#aaa;">⚠️ <b>注意事项</b></p>
-            <p style="margin:0;">{kb_entry['precautions']}</p>
-        </div>"""
-
     # LLM report section
     llm_html = ""
     if llm_report:
@@ -545,7 +527,6 @@ def _build_report(predictions: list, info: dict, llm_report: str = None) -> str:
         </div>
 
         {bar_rows}
-        {kb_html}
         {llm_html}
 
         <div style="margin-top:10px; padding:6px 8px; background:#111; border-radius:4px; font-size:9px; color:#666; text-align:center;">
@@ -620,12 +601,8 @@ def build_ui(models: list):
                 )
                 top_k_slider = gr.Slider(1, 5, 3, step=1, label="Top-K")
                 cam_checkbox = gr.Checkbox(label="Grad-CAM 热力图", value=False)
-                llm_checkbox = gr.Checkbox(
-                    label="🤖 启用AI建议",
-                    value=llm_client is not None,
-                    info="调用大模型生成医学建议" if llm_client else "需--api-key启动",
-                    interactive=llm_client is not None,
-                )
+                llm_status = "🤖 AI建议: 已启用" if llm_client else "💡 AI建议: 使用 --api-key 启用"
+                gr.Markdown(f"*{llm_status}*")
                 model_info = gr.HTML(value=_model_info_html(default_model))
 
             with gr.Column(scale=2):
@@ -643,7 +620,7 @@ def build_ui(models: list):
 
                         classify_btn.click(
                             fn=classify,
-                            inputs=[input_image, model_dropdown, cam_checkbox, top_k_slider, llm_checkbox],
+                            inputs=[input_image, model_dropdown, cam_checkbox, top_k_slider],
                             outputs=[output_image, report_html, cam_output, model_info],
                         )
 
