@@ -614,7 +614,7 @@ def main():
     # Training
     parser.add_argument("--img-size", type=int, default=224,
                         help="Input image size (224 or 384)")
-    parser.add_argument("--batch", type=int, default=128,
+    parser.add_argument("--batch", type=int, default=32,
                         help="Batch size")
     parser.add_argument("--epochs", type=int, default=50,
                         help="Max epochs")
@@ -632,7 +632,7 @@ def main():
                         help="Early stopping patience")
 
     # System
-    parser.add_argument("--device", type=str, default=0,
+    parser.add_argument("--device", type=str, default="mps",
                         help="Device (mps/cpu/cuda)")
     parser.add_argument("--workers", type=int, default=4,
                         help="DataLoader workers")

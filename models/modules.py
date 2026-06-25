@@ -33,8 +33,11 @@ class GeMPool(nn.Module):
                with No Human Annotation", PAMI 2018.
     """
 
-    def __init__(self, p_init: float = 3.0, eps: float = 1e-6):
+    def __init__(self, p_init: float = 1.0, eps: float = 1e-6):
         super().__init__()
+        # Start from 1.0 (avg pooling) — too high p_init (e.g. 3.0) causes
+        # severe early-training slowdown because GeM amplifies random feature
+        # activations when backbone weights are still unadapted.
         self.p = nn.Parameter(torch.ones(1) * p_init)
         self.eps = eps
 
@@ -46,8 +49,8 @@ class GeMPool(nn.Module):
         Returns:
             (B, C) pooled descriptor
         """
-        # Clamp p to avoid numerical issues
-        p = self.p.clamp(min=1.0, max=10.0)
+        # Clamp p: min=1 (avg pool), max=5 (prevent numerical overflow)
+        p = self.p.clamp(min=1.0, max=5.0)
 
         # GeM: (mean(x^p))^(1/p)
         x = x.clamp(min=self.eps)
@@ -147,19 +150,15 @@ class MultiScaleHead(nn.Module):
 
 class ConvNeXtWithFeatures(nn.Module):
     """
-    Wraps a timm ConvNeXt model and exposes intermediate stage features.
+    Wraps a timm ConvNeXt model, discards its original head, and attaches
+    a clean custom classifier.
 
-    Stages in ConvNeXt-Tiny:
-      - stem          → (B, 96, H/4, W/4)
-      - stages.0      → (B, 96, H/4, W/4)   ← Stage 1
-      - stages.1      → (B, 192, H/8, W/8)  ← Stage 2
-      - stages.2      → (B, 384, H/16, W/16) ← Stage 3
-      - stages.3      → (B, 768, H/32, W/32) ← Stage 4
-      - head.norm + fc for classification
+    Two modes:
+      - Single-scale: stem → stages → pool → classifier
+      - Multi-scale:  stem → stages → [S2,S3,S4] → MultiScaleHead
 
-    We capture stage 1-4 outputs, then apply either:
-      - Default head (avgpool + classifier) — single-scale
-      - MultiScaleHead                         — multi-scale fusion
+    This avoids fragile surgery on `backbone.head` and gives full control
+    over pooling (avg / GeM) and dropout.
     """
 
     def __init__(
@@ -168,114 +167,70 @@ class ConvNeXtWithFeatures(nn.Module):
         num_classes: int = 22,
         dropout: float = 0.3,
         use_multi_scale: bool = False,
-        pooling: str = "avg",   # "avg" | "gem"
+        pooling: str = "avg",
     ):
         super().__init__()
-        self.backbone = backbone
         self.use_multi_scale = use_multi_scale
-        self.stage_channels = []
 
-        # Detect stage channels
-        self._probe_channels(backbone)
+        # Pull out stem + stages, discard original head
+        self.stem = backbone.stem
+        self.stages = backbone.stages
+
+        # Determine feature dim at stage 4 output
+        feat_dim = 768  # ConvNeXt-Tiny default
+        if hasattr(backbone, 'head'):
+            head = backbone.head
+            if hasattr(head, 'norm') and isinstance(head.norm, nn.LayerNorm):
+                feat_dim = head.norm.normalized_shape[0]
 
         if use_multi_scale:
-            # Multi-scale fusion head
-            stage_chs = tuple(self.stage_channels[-3:]) if len(self.stage_channels) >= 3 else (192, 384, 768)
+            # Stage channels: [S1, S2, S3, S4] — use last 3 for fusion
+            stage_chs = [96, 192, 384, feat_dim][-3:]  # (192, 384, 768)
             self.head = MultiScaleHead(
-                in_channels=stage_chs,
+                in_channels=tuple(stage_chs),
                 hidden_dim=256,
                 num_classes=num_classes,
                 dropout=dropout,
                 pooling=pooling,
             )
-            # Replace the backbone's original head with identity
-            if hasattr(backbone, 'head'):
-                backbone.head = nn.Identity()
-            if hasattr(backbone, 'fc'):
-                backbone.fc = nn.Identity()
         else:
-            # Single-scale: replace classifier head
-            in_features = self._get_backbone_feat_dim(backbone)
+            # Clean single-scale head
+            norm_layer = nn.LayerNorm(feat_dim, eps=1e-6)
+
             if pooling == "gem":
-                pool_layer = GeMPool()
+                pool_layer = GeMPool(p_init=1.0)
             else:
-                pool_layer = None
+                pool_layer = nn.AdaptiveAvgPool2d(1)
 
-            # Replace backbone head
-            if hasattr(backbone, 'head'):
-                backbone.head.fc = nn.Linear(
-                    backbone.head.norm.normalized_shape[0] if hasattr(backbone.head, 'norm') else 768,
-                    num_classes
-                )
-                # Override whole head to add dropout
-                backbone.head = nn.Sequential(
-                    backbone.head.norm if hasattr(backbone.head, 'norm') else nn.Identity(),
-                    pool_layer if pool_layer else nn.AdaptiveAvgPool2d(1),
-                    nn.Flatten(1),
-                    nn.Dropout(dropout),
-                    nn.Linear(
-                        backbone.head.norm.normalized_shape[0] if hasattr(backbone.head, 'norm') else 768,
-                        num_classes
-                    )
-                )
+            self.head = nn.Sequential(
+                norm_layer,
+                pool_layer,
+                nn.Flatten(1),
+                nn.Dropout(dropout),
+                nn.Linear(feat_dim, num_classes),
+            )
 
-        self._stage_features = {}
-
-    def _probe_channels(self, backbone):
-        """Probe each stage's output channels with a dummy forward."""
-        try:
-            dummy = torch.randn(1, 3, 224, 224)
-            with torch.no_grad():
-                _ = self._forward_stages(dummy)
-        except Exception:
-            self.stage_channels = [96, 192, 384, 768]  # ConvNeXt-Tiny defaults
-
-    def _forward_stages(self, x):
-        """Forward through backbone, capturing stage outputs."""
-        self._stage_features = {}
-
-        # Stem
-        x = self.backbone.stem(x)
-        self._stage_features["stage0"] = x  # Before stages
-
-        # Stages
-        for i, stage in enumerate(self.backbone.stages):
+    def _extract_stage_features(self, x):
+        """Run stem + stages, return dict of stage outputs."""
+        features = {}
+        x = self.stem(x)
+        features["stage0"] = x
+        for i, stage in enumerate(self.stages):
             x = stage(x)
-            self._stage_features[f"stage{i+1}"] = x
-
-        return x
-
-    def _get_backbone_feat_dim(self, backbone):
-        """Try to determine the backbone's feature dimension."""
-        # Common paths in timm ConvNeXt
-        if hasattr(backbone, 'head'):
-            head = backbone.head
-            if hasattr(head, 'fc') and hasattr(head.fc, 'in_features'):
-                return head.fc.in_features
-            if hasattr(head, 'norm'):
-                if isinstance(head.norm, nn.LayerNorm):
-                    return head.norm.normalized_shape[0]
-                if hasattr(head.norm, 'normalized_shape'):
-                    return head.norm.normalized_shape[0]
-        if hasattr(backbone, 'num_features'):
-            return backbone.num_features
-        return 768  # ConvNeXt-Tiny default
+            features[f"stage{i+1}"] = x
+        return features, x  # dict, final (stage4) output
 
     def forward(self, x):
         if self.use_multi_scale:
-            _ = self._forward_stages(x)
-            # Use stage2, stage3, stage4 for multi-scale
-            features = {
-                "stage2": self._stage_features.get("stage2"),
-                "stage3": self._stage_features.get("stage3"),
-                "stage4": self._stage_features.get("stage4"),
-            }
-            if features["stage4"] is None:
-                # Fallback: forward again through head path
-                raise RuntimeError("Multi-scale features not captured")
-            return self.head(features)
+            feats, _ = self._extract_stage_features(x)
+            return self.head({
+                "stage2": feats.get("stage2"),
+                "stage3": feats.get("stage3"),
+                "stage4": feats.get("stage4"),
+            })
         else:
-            return self.backbone(x)
+            _, stage4 = self._extract_stage_features(x)
+            return self.head(stage4)
 
 
 # ============================================================
