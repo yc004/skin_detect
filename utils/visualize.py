@@ -10,7 +10,7 @@ Includes:
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import json
 
 import matplotlib
@@ -18,8 +18,83 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
+from PIL import Image, ImageDraw, ImageFont
 import torch
 import torch.nn.functional as F
+
+
+# ============================================================
+# PIL Text Rendering (supports Chinese)
+# ============================================================
+
+# Try to find a font with Chinese glyphs
+def _find_cjk_font() -> str:
+    """Find a font file that supports Chinese characters."""
+    candidates = [
+        # macOS
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/Library/Fonts/Arial Unicode.ttf",
+        # Windows
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simsun.ttc",
+        "C:/Windows/Fonts/mingliu.ttc",
+        # Linux
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            return path
+    return None
+
+_CJK_FONT_PATH = _find_cjk_font()
+
+
+def put_text_cjk(
+    img: np.ndarray,
+    text: str,
+    position: Tuple[int, int],
+    font_size: int = 16,
+    color: Tuple[int, int, int] = (255, 255, 255),
+    stroke_width: int = 0,
+    stroke_color: Tuple[int, int, int] = (0, 0, 0),
+) -> None:
+    """
+    Draw text on a BGR numpy image using PIL, with CJK support.
+    Falls back to OpenCV putText if no CJK font is found.
+    """
+    has_cjk = any(ord(c) > 127 for c in text)
+    if not has_cjk or _CJK_FONT_PATH is None:
+        # Use OpenCV for ASCII text
+        cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX,
+                    font_size / 20, color, max(1, stroke_width), cv2.LINE_AA)
+        return
+
+    # Convert BGR → RGB PIL image
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(img_rgb)
+    draw = ImageDraw.Draw(pil_img)
+
+    try:
+        font = ImageFont.truetype(_CJK_FONT_PATH, font_size)
+    except Exception:
+        font = ImageFont.load_default()
+
+    # PIL uses (R,G,B), our color is (B,G,R)
+    pil_color = (color[2], color[1], color[0])
+
+    if stroke_width > 0:
+        pil_stroke = (stroke_color[2], stroke_color[1], stroke_color[0])
+        draw.text(position, text, font=font, fill=pil_color,
+                  stroke_width=stroke_width, stroke_fill=pil_stroke)
+    else:
+        draw.text(position, text, font=font, fill=pil_color)
+
+    # Convert back
+    img[:] = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
 # ============================================================
@@ -47,8 +122,8 @@ def draw_classification_result(
     overlay[:, :] = (30, 30, 35)
     img[:, -panel_w:] = cv2.addWeighted(img[:, -panel_w:], 0.3, overlay, 0.7, 0)
 
-    cv2.putText(img, "Classification Result", (w - panel_w + 10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1, cv2.LINE_AA)
+    put_text_cjk(img, "Classification Result", (w - panel_w + 10, 30),
+                 font_size=13, color=(200, 200, 200))
     cv2.line(img, (w - panel_w + 10, 38), (w - 10, 38), (80, 80, 80), 1)
 
     y = 65
@@ -63,10 +138,10 @@ def draw_classification_result(
         cv2.rectangle(img, (w - panel_w + 12, y), (w - panel_w + panel_w - 14, y + 18), (60, 60, 60), 1)
 
         risk_icon = {"HIGH": "!!", "MEDIUM": "! ", "LOW": "  "}.get(risk, "  ")
-        cv2.putText(img, f"{risk_icon} {name}", (w - panel_w + 16, y + 13),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(img, f"{conf:.1%}", (w - 45, y + 13),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
+        put_text_cjk(img, f"{risk_icon} {name}", (w - panel_w + 16, y + 1),
+                     font_size=12, color=(255, 255, 255))
+        put_text_cjk(img, f"{conf:.1%}", (w - 45, y + 1),
+                     font_size=11, color=(180, 180, 180))
         y += 28
 
     top = predictions[0]
@@ -77,8 +152,8 @@ def draw_classification_result(
     banner_text = f"Prediction: {top_name} ({top['confidence']:.1%})"
     if top_risk == "HIGH":
         banner_text = f"!! HIGH RISK: {top_name} ({top['confidence']:.1%}) — Seek Clinical Advice"
-    cv2.putText(img, banner_text, (10, 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    put_text_cjk(img, banner_text, (10, 4),
+                 font_size=14, color=(255, 255, 255), stroke_width=1)
 
     return img
 
