@@ -268,19 +268,13 @@ body {
   <div class="cols">
     <div class="col">
       <h3>基线 (V1)</h3>
-      <div style="width:300px; height:200px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted);">
-        <img src="/static/placeholder.svg" style="display:none" alt="">
-        📈 runs/convnext_tiny/<br>training_curves.png<br><br>
-        <small>最佳 Epoch 45 · 79.80%</small>
-      </div>
+      <img src="runs/convnext_tiny/training_curves.png" style="max-width:380px;max-height:260px;border-radius:8px" onerror="this.outerHTML='<p style=color:#888>📈 图片待加载</p>'" alt="训练曲线-基线">
+      <p style="font-size:.8em;color:var(--muted)">最佳 Epoch 45 · 79.80%</p>
     </div>
     <div class="col">
       <h3>改进 (V2+GeM+EMA)</h3>
-      <div style="width:300px; height:200px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted);">
-        📈 runs/convnextv2_tiny_GeM_EMA/<br>training_curves.png<br><br>
-        <small>最佳 Epoch 50 · 82.20%</small>
-      </div>
-    </div>
+      <img src="runs/convnextv2_tiny_GeM_EMA/training_curves.png" style="max-width:380px;max-height:260px;border-radius:8px" onerror="this.outerHTML='<p style=color:#888>📈 图片待加载</p>'" alt="训练曲线-改进">
+      <p style="font-size:.8em;color:var(--muted)">最佳 Epoch 50 · 82.20%</p>
   </div>
   <p style="margin-top:12px; font-size:.85em;">改进模型初期收敛慢 (FCMAE 预训练 + GeM p 增长) 但最终收敛到更高水平</p>
 </div>
@@ -321,23 +315,15 @@ body {
     <div class="col">
       <h3>混淆矩阵对比</h3>
       <div style="display:flex; gap:8px; justify-content:center;">
-        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
-          confusion_matrix.png<br>(基线)<br><br>对角线外<br>高频误分类较多
-        </div>
-        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
-          confusion_matrix.png<br>(改进)<br><br>对角线集中<br>跨类混淆减少
-        </div>
+        <img src="runs/convnext_tiny/confusion_matrix.png" style="width:200px;height:200px;border-radius:8px;object-fit:contain" onerror="this.outerHTML='<p style=color:#888>图片待加载</p>'" alt="混淆矩阵-基线">
+        <img src="runs/convnextv2_tiny_GeM_EMA/confusion_matrix.png" style="width:200px;height:200px;border-radius:8px;object-fit:contain" onerror="this.outerHTML='<p style=color:#888>图片待加载</p>'" alt="混淆矩阵-改进">
       </div>
     </div>
     <div class="col">
       <h3>ROC 曲线</h3>
       <div style="display:flex; gap:8px; justify-content:center;">
-        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
-          roc_curves.png<br>(基线)<br><br>Micro AUC<br><b>0.974</b>
-        </div>
-        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
-          roc_curves.png<br>(改进)<br><br>Micro AUC<br><span class="hl"><b>0.982</b></span>
-        </div>
+        <img src="runs/convnext_tiny/roc_curves.png" style="width:200px;height:200px;border-radius:8px;object-fit:contain" onerror="this.outerHTML='<p style=color:#888>图片待加载</p>'" alt="ROC-基线">
+        <img src="runs/convnextv2_tiny_GeM_EMA/roc_curves.png" style="width:200px;height:200px;border-radius:8px;object-fit:contain" onerror="this.outerHTML='<p style=color:#888>图片待加载</p>'" alt="ROC-改进">
       </div>
     </div>
   </div>
