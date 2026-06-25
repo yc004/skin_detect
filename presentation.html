@@ -35,44 +35,44 @@
 }
 .reveal .slides section {
   text-align: center;
-  padding: 20px 40px;
+  padding: 12px 30px;
 }
-.reveal h1 { font-size: 2em; font-weight: 700; margin-bottom: 10px; }
-.reveal h2 { font-size: 1.5em; font-weight: 600; color: var(--accent); margin-bottom: 16px; }
-.reveal h3 { font-size: 1em; color: var(--muted); font-weight: 400; margin-bottom: 8px; }
-.reveal p, .reveal li { font-size: .85em; line-height: 1.7; color: #ddd; }
+.reveal h1 { font-size: 1.6em; font-weight: 700; margin-bottom: 8px; }
+.reveal h2 { font-size: 1.2em; font-weight: 600; color: var(--accent); margin-bottom: 12px; }
+.reveal h3 { font-size: .85em; color: var(--muted); font-weight: 400; margin-bottom: 6px; }
+.reveal p, .reveal li { font-size: .72em; line-height: 1.55; color: #ddd; }
 .reveal ul { list-style: none; padding: 0; }
 .reveal ul li::before { content: "▸ "; color: var(--accent); }
-.reveal small { font-size: .7em; color: var(--muted); }
+.reveal small { font-size: .65em; color: var(--muted); }
 
 /* Tags */
-.tag { display:inline-block; padding:2px 10px; border-radius:10px; font-size:.7em; margin:2px; font-weight:500; }
+.tag { display:inline-block; padding:1px 8px; border-radius:8px; font-size:.65em; margin:1px; font-weight:500; }
 .tag-r { background:#3a1a1a; color:var(--red); }
 .tag-y { background:#2a2a1a; color:var(--orange); }
 .tag-g { background:#1a2a1a; color:var(--green); }
 .tag-b { background:#1a2a3a; color:var(--accent); }
 
 /* Tables */
-.tbl { border-collapse:collapse; margin:8px auto; font-size:.78em; width:100%; max-width:700px; }
-.tbl th { background:var(--border); padding:6px 10px; font-weight:600; color:var(--accent); text-align:center; }
-.tbl td { padding:6px 10px; border-bottom:1px solid var(--border); text-align:center; }
+.tbl { border-collapse:collapse; margin:4px auto; font-size:.65em; width:100%; max-width:600px; }
+.tbl th { background:var(--border); padding:3px 8px; font-weight:600; color:var(--accent); text-align:center; }
+.tbl td { padding:3px 8px; border-bottom:1px solid var(--border); text-align:center; }
 .tbl .up { color:var(--green); font-weight:600; }
 .tbl .dn { color:var(--red); }
 
 /* Cards grid */
-.cards { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; margin:10px 0; }
-.card { background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:16px 18px; width:220px; text-align:left; }
-.card h4 { color:var(--accent); font-size:.85em; margin:0 0 4px 0; }
-.card p { font-size:.72em; color:var(--muted); line-height:1.5; margin:0; }
-.card .icon { font-size:1.6em; margin-bottom:4px; display:block; }
+.cards { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin:6px 0; }
+.card { background:var(--card-bg); border:1px solid var(--border); border-radius:6px; padding:10px 12px; width:200px; text-align:left; }
+.card h4 { color:var(--accent); font-size:.72em; margin:0 0 2px 0; }
+.card p { font-size:.62em; color:var(--muted); line-height:1.4; margin:0; }
+.card .icon { font-size:1.2em; margin-bottom:2px; display:block; }
 
 /* Two-column */
 .cols { display:flex; gap:24px; align-items:center; justify-content:center; }
 .col { flex:1; text-align:center; }
 
 /* Big numbers */
-.big { font-size:3.5em; font-weight:800; color:var(--green); line-height:1; }
-.big-sub { font-size:.8em; color:var(--muted); }
+.big { font-size:2.8em; font-weight:800; color:var(--green); line-height:1; }
+.big-sub { font-size:.7em; color:var(--muted); }
 
 /* Highlight */
 .hl { color:var(--green); font-weight:600; }
@@ -80,11 +80,11 @@
 .hl-o { color:var(--orange); font-weight:600; }
 
 /* Formula */
-.formula { display:inline-block; padding:8px 20px; background:var(--card-bg); border-radius:6px; margin:6px 0; font-family:serif; font-style:italic; font-size:.95em; }
+.formula { display:inline-block; padding:4px 14px; background:var(--card-bg); border-radius:4px; margin:4px 0; font-family:serif; font-style:italic; font-size:.8em; }
 
 /* Image preview */
-.img-preview { max-width:400px; max-height:300px; border-radius:8px; border:2px solid var(--border); }
-.img-compare { max-width:350px; max-height:280px; border-radius:8px; object-fit:contain; }
+.img-preview { max-width:340px; max-height:260px; border-radius:6px; border:1px solid var(--border); }
+.img-compare { max-width:300px; max-height:230px; border-radius:6px; object-fit:contain; }
 
 /* Gradient text */
 .grad { background:linear-gradient(135deg, var(--accent), var(--green)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:700; }
@@ -100,8 +100,8 @@
      S1: COVER
      ============================================================ -->
 <section>
-  <h1 class="grad" style="font-size:2.2em;">基于改进 ConvNeXt 的<br>多类别皮肤疾病智能分类系统</h1>
-  <p style="margin-top:6px;font-size:.9em;">22 类皮肤疾病 · Val Acc <span class="hl">82.20%</span> · Grad-CAM · AI 辅助诊断</p>
+  <h1 class="grad" style="font-size:1.8em;">基于改进 ConvNeXt 的<br>多类别皮肤疾病智能分类系统</h1>
+  <p style="margin-top:6px;font-size:.75em;">22 类皮肤疾病 · Val Acc <span class="hl">82.20%</span> · Grad-CAM · AI 辅助诊断</p>
   <div style="margin-top:16px;">
     <span class="tag tag-b">ConvNeXt V2</span>
     <span class="tag tag-g">GeM Pooling</span>
@@ -163,7 +163,7 @@
       </table>
     </div>
     <div class="col">
-      <canvas id="chartDistribution" width="400" height="300"></canvas>
+      <canvas id="chartDistribution" width="340" height="250"></canvas>
     </div>
   </div>
   <p style="font-size:.7em;color:var(--muted);margin-top:4px;">数据不均衡：最多 1,840 例 (正常) vs 最少 275 例 (念珠菌病)，相差 6.7×</p>
@@ -319,7 +319,7 @@
   <h2>Per-Class 详细对比</h2>
   <div class="cols">
     <div class="col" style="flex:2;">
-      <canvas id="chartPerClass" width="600" height="350"></canvas>
+      <canvas id="chartPerClass" width="500" height="280"></canvas>
     </div>
     <div class="col" style="flex:1;font-size:.7em;text-align:left;">
       <p><b>提升最大 Top 5：</b></p>
@@ -383,7 +383,7 @@
      ============================================================ -->
 <section>
   <h2>消融分析：组件贡献拆解</h2>
-  <canvas id="chartAblation" width="700" height="300"></canvas>
+  <canvas id="chartAblation" width="560" height="240"></canvas>
   <p style="font-size:.75em;color:var(--muted);margin-top:6px;">GRN ≈ +1.2% &nbsp;|&nbsp; GeM ≈ +0.5% &nbsp;|&nbsp; EMA ≈ +0.7% &nbsp;|&nbsp; <span class="hl">协同效应 > 简单相加</span></p>
   <aside class="notes">三个组件各自贡献约1.2%/0.5%/0.7%。协同效应大于简单相加——GRN增强特征多样性，GeM在多样化特征空间里更容易找到判别区域。</aside>
 </section>
@@ -436,7 +436,7 @@
      S19: THANK YOU
      ============================================================ -->
 <section>
-  <h1 class="grad" style="font-size:2.4em;">感谢聆听</h1>
+  <h1 class="grad" style="font-size:1.8em;">感谢聆听</h1>
   <p style="font-size:1em;margin-top:8px;">请各位老师批评指正</p>
   <div style="margin-top:20px;padding:12px 20px;background:var(--card-bg);border-radius:8px;display:inline-block;font-size:.8em;">
     GitHub: <b>https://github.com/yc004/skin_detect</b>
@@ -465,9 +465,9 @@ Reveal.initialize({
   center: true,
   controls: true,
   progress: true,
-  width: 1200,
-  height: 700,
-  margin: 0.1,
+  width: 960,
+  height: 540,
+  margin: 0.12,
   plugins: [RevealHighlight, RevealNotes],
 });
 
