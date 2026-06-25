@@ -733,17 +733,17 @@ def build_ui(models: list, theme, css: str):
                     height=200, visible=True,
                 )
 
-            # ── Right Column: Report ──
-            with gr.Column(scale=2, min_width=280, elem_id="col-report"):
-                report_html = gr.HTML(value=_empty_report())
-                # Chat state and UI
+            # ── Right Column: Report + Chat ──
+            with gr.Column(scale=2, min_width=280):
+                report_html = gr.HTML(value=_empty_report(), elem_id="col-report")
                 chat_state = gr.State({})
-                chatbot = gr.Chatbot(label="💬 AI 对话咨询", height=260)
-                chat_input = gr.Textbox(
-                    placeholder="输入问题... 如: 这个病严重吗？怎么治疗？会传染吗？",
-                    label="咨询AI助手", scale=4,
-                )
-                chat_btn = gr.Button("发送", variant="secondary", scale=1)
+                chatbot = gr.Chatbot(label="💬 AI 对话咨询", height=220)
+                with gr.Row():
+                    chat_input = gr.Textbox(
+                        placeholder="输入问题... 如: 这个病严重吗？会传染吗？",
+                        label="咨询AI助手", scale=4,
+                    )
+                    chat_btn = gr.Button("发送", variant="secondary", scale=1)
 
         # --- Events ---
         classify_inputs = [input_image, model_dropdown, cam_checkbox, top_k_slider, chat_state]
@@ -836,7 +836,7 @@ def main():
     footer { visibility: hidden; }
     .gradio-container { max-width: 1400px !important; }
     #col-settings { background: #1e1e2e; border-radius: 12px; padding: 16px; }
-    #col-report { background: #1e1e2e; border-radius: 12px; padding: 4px; max-height: 720px; overflow-y: auto; }
+    #col-report { background: #1e1e2e; border-radius: 12px; padding: 8px; max-height: 420px; overflow-y: auto; }
     """
     demo = build_ui(models, theme, css)
     demo.queue(max_size=20)
