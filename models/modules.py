@@ -195,17 +195,17 @@ class ConvNeXtWithFeatures(nn.Module):
             )
         else:
             # Clean single-scale head
-            norm_layer = nn.LayerNorm(feat_dim, eps=1e-6)
-
+            # Order: pool → flatten → norm → dropout → linear
+            # LayerNorm must come AFTER flatten because it operates on 1D features
             if pooling == "gem":
                 pool_layer = GeMPool(p_init=1.0)
             else:
                 pool_layer = nn.AdaptiveAvgPool2d(1)
 
             self.head = nn.Sequential(
-                norm_layer,
-                pool_layer,
-                nn.Flatten(1),
+                pool_layer,                          # (B,C,H,W) → (B,C,1,1)
+                nn.Flatten(1),                       # (B,C,1,1) → (B,C)
+                nn.LayerNorm(feat_dim, eps=1e-6),    # normalize feature vector
                 nn.Dropout(dropout),
                 nn.Linear(feat_dim, num_classes),
             )
