@@ -211,12 +211,12 @@ DISEASE_KB = {
 # ============================================================
 
 class LLMClient:
-    """Simple OpenAI-compatible API client for medical report generation."""
+    """OpenAI-compatible API client with streaming support."""
 
     def __init__(self, api_key: str, api_base: str = "https://api.openai.com/v1",
                  model: str = "gpt-4o-mini"):
         self.api_key = api_key
-        self.api_base = api_base
+        self.api_base = api_base.rstrip("/")
         self.model = model
         self._available = None
 
@@ -225,7 +225,6 @@ class LLMClient:
             return self._available
         try:
             import urllib.request
-            import urllib.error
             req = urllib.request.Request(
                 f"{self.api_base}/models",
                 headers={"Authorization": f"Bearer {self.api_key}"}
@@ -236,12 +235,8 @@ class LLMClient:
             self._available = False
         return self._available
 
-    def generate_report(self, disease_en: str, disease_zh: str,
-                        confidence: float, risk: str) -> str:
-        """Generate a structured medical report via LLM."""
-        if not self._check_available():
-            return None
-
+    def _build_prompt(self, disease_en: str, disease_zh: str,
+                      confidence: float, risk: str) -> str:
         kb_entry = DISEASE_KB.get(disease_en, {})
         kb_text = ""
         if kb_entry:
@@ -251,57 +246,90 @@ class LLMClient:
 - 治疗: {kb_entry['treatment']}
 - 注意事项: {kb_entry['precautions']}"""
 
-        prompt = f"""你是皮肤科AI助手。根据以下分类结果，生成一份简洁的医学报告。
+        return f"""你是皮肤科AI助手。根据分类结果生成简洁医学报告。
 
-分类结果:
-- 疾病: {disease_en}（{disease_zh}）
-- 置信度: {confidence:.1%}
-- 风险等级: {risk}
+分类: {disease_en}（{disease_zh}） | 置信度: {confidence:.1%} | 风险: {risk}
 
 {kb_text}
 
-请按以下格式输出（使用中文，每段不超过3行):
+用中文输出，每段不超过3行:
 
 【疾病概述】
-（1-2句简洁描述）
+（1-2句）
 
 【可能症状】
-（列出2-3个关键症状）
+（2-3个要点）
 
 【建议措施】
-（列出2-3条核心建议）
+（2-3条建议）
 
 【就医指引】
-（给出具体就医建议，含应就诊科室）
+（科室+具体建议）
 
-⚠️ 末尾务必加一句: 本报告由AI生成，仅供参考，不能替代专业医疗诊断。
-"""
+末尾加: ⚠️ 本报告AI生成仅供参考，不能替代专业医疗诊断。"""
+
+    def generate_report(self, disease_en: str, disease_zh: str,
+                        confidence: float, risk: str) -> str:
+        """Non-streaming report generation."""
+        if not self._check_available():
+            return None
         try:
             import urllib.request
-            import urllib.error
             data = json.dumps({
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "你是皮肤科AI助手，提供专业、准确的医学信息。始终提醒用户咨询专业医生。"},
-                    {"role": "user", "content": prompt},
+                    {"role": "system", "content": "你是皮肤科AI助手，提供专业准确的医学信息。"},
+                    {"role": "user", "content": self._build_prompt(disease_en, disease_zh, confidence, risk)},
                 ],
-                "temperature": 0.3,
-                "max_tokens": 600,
+                "temperature": 0.3, "max_tokens": 600, "stream": False,
             }).encode("utf-8")
-
             req = urllib.request.Request(
                 f"{self.api_base}/chat/completions",
                 data=data,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
             )
             resp = urllib.request.urlopen(req, timeout=30)
             result = json.loads(resp.read())
             return result["choices"][0]["message"]["content"]
         except Exception as e:
-            return f"[LLM调用失败: {e}]"
+            return f"[AI调用失败: {e}]"
+
+    def generate_report_stream(self, disease_en: str, disease_zh: str,
+                                confidence: float, risk: str):
+        """Streaming report generation — yields token strings."""
+        if not self._check_available():
+            yield "[AI服务不可用]"
+            return
+        try:
+            import urllib.request
+            data = json.dumps({
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": "你是皮肤科AI助手。"},
+                    {"role": "user", "content": self._build_prompt(disease_en, disease_zh, confidence, risk)},
+                ],
+                "temperature": 0.3, "max_tokens": 600, "stream": True,
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                f"{self.api_base}/chat/completions",
+                data=data,
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            )
+            resp = urllib.request.urlopen(req, timeout=60)
+            for line in resp:
+                line = line.decode("utf-8").strip()
+                if line.startswith("data: ") and line != "data: [DONE]":
+                    try:
+                        chunk = json.loads(line[6:])
+                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            yield f"\n[AI调用失败: {e}]"
 
 
 # ============================================================
@@ -431,26 +459,32 @@ manager = ModelManager()
 # Inference
 # ============================================================
 
-@torch.no_grad()
 def classify(image, model_path, show_cam, top_k):
+    """Generator: yields (annotated, report_html, cam_image, model_info) progressively."""
+    info_html = _model_info_html(model_path)
+    empty = _empty_report()
+
     if image is None:
-        return None, _empty_report(), None, _model_info_html(model_path)
+        yield None, empty, None, info_html
+        return
 
     try:
         model, class_names, class_names_zh, class_risk, img_size, transform, info = manager.load(model_path)
     except Exception as e:
-        return image, f"<p style='color:red'>Failed to load: {e}</p>", None, ""
+        yield image, f"<p style='color:red'>Failed to load: {e}</p>", None, info_html
+        return
 
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    tensor = transform(image_rgb).unsqueeze(0).to(manager.device)
+    # --- Phase 1: Classification ---
+    with torch.no_grad():
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        tensor = transform(image_rgb).unsqueeze(0).to(manager.device)
+        logits = model(tensor)
+        probs = F.softmax(logits, dim=1)
 
-    logits = model(tensor)
-    probs = F.softmax(logits, dim=1)
-
-    k = min(top_k, len(class_names))
-    topk_probs, topk_indices = torch.topk(probs, k)
-    topk_probs = topk_probs.cpu().numpy()[0]
-    topk_indices = topk_indices.cpu().numpy()[0]
+        k = min(top_k, len(class_names))
+        topk_probs, topk_indices = torch.topk(probs, k)
+        topk_probs = topk_probs.cpu().numpy()[0]
+        topk_indices = topk_indices.cpu().numpy()[0]
 
     predictions = []
     for prob, idx in zip(topk_probs, topk_indices):
@@ -460,24 +494,31 @@ def classify(image, model_path, show_cam, top_k):
         risk = class_risk.get(name_en, "LOW")
         predictions.append({"class": name_en, "class_zh": display_name, "confidence": float(prob), "risk": risk})
 
-    # LLM report
-    llm_report = None
-    if llm_client is not None:
-        top = predictions[0]
-        llm_report = llm_client.generate_report(
-            top["class"], class_names_zh.get(top["class"], top["class"]),
-            top["confidence"], top["risk"]
-        )
-
     annotated = draw_classification_result(image, predictions, class_risk)
-    report_html = _build_report(predictions, info, llm_report)
-    info_html = _model_info_html(model_path)
 
     cam_image = None
     if show_cam:
         cam_image = draw_gradcam(model, image, class_names, transform, manager.device)
 
-    return annotated, report_html, cam_image, info_html
+    # --- Phase 2: Stream LLM report ---
+    if llm_client is not None:
+        top = predictions[0]
+        # Yield classification result + "loading" indicator first
+        loading_html = _build_report(predictions, info, "⏳ 正在生成AI建议...")
+        yield annotated, loading_html, cam_image, info_html
+
+        # Stream tokens
+        accumulated = ""
+        for token in llm_client.generate_report_stream(
+            top["class"], class_names_zh.get(top["class"], top["class"]),
+            top["confidence"], top["risk"]
+        ):
+            accumulated += token
+            stream_html = _build_report(predictions, info, accumulated)
+            yield annotated, stream_html, cam_image, info_html
+    else:
+        report_html = _build_report(predictions, info, None)
+        yield annotated, report_html, cam_image, info_html
 
 
 # ============================================================
@@ -641,12 +682,12 @@ def build_ui(models: list):
             with gr.Column(scale=2, min_width=280, elem_id="col-report"):
                 report_html = gr.HTML(value=_empty_report())
 
-        # Events
-        classify_btn.click(
-            fn=classify,
-            inputs=[input_image, model_dropdown, cam_checkbox, top_k_slider],
-            outputs=[output_image, report_html, cam_output, model_info],
-        )
+        # Events: auto-trigger on upload + manual button
+        classify_inputs = [input_image, model_dropdown, cam_checkbox, top_k_slider]
+        classify_outputs = [output_image, report_html, cam_output, model_info]
+
+        classify_btn.click(fn=classify, inputs=classify_inputs, outputs=classify_outputs)
+        input_image.change(fn=classify, inputs=classify_inputs, outputs=classify_outputs)
 
         # Footer
         gr.Markdown("""
