@@ -190,8 +190,9 @@ async function streamAIReport(topPrediction) {
   const loadingDiv = document.getElementById('aiLoading');
 
   reportDiv.style.display = '';
-  contentDiv.textContent = '';
+  contentDiv.innerHTML = '';
   loadingDiv.style.display = '';
+  let mdText = '';
 
   // Use AbortController to cancel previous stream
   activeAbortController = new AbortController();
@@ -226,7 +227,8 @@ async function streamAIReport(topPrediction) {
           try {
             const parsed = JSON.parse(data);
             if (parsed.token) {
-              contentDiv.textContent += parsed.token;
+              mdText += parsed.token;
+              contentDiv.innerHTML = marked.parse(mdText);
             }
           } catch (e) { /* skip */ }
         }
@@ -235,7 +237,7 @@ async function streamAIReport(topPrediction) {
     activeAbortController = null;
   } catch (err) {
     if (err.name === 'AbortError') return;  // Intentionally cancelled
-    contentDiv.textContent = '[AI建议生成失败: ' + err.message + ']';
+    contentDiv.innerHTML = '<em style="color:#ef5350">[AI建议生成失败: ' + err.message + ']</em>';
   }
   loadingDiv.style.display = 'none';
 }
@@ -309,7 +311,8 @@ async function sendChat() {
             const parsed = JSON.parse(data);
             if (parsed.token) {
               chatHistory[chatHistory.length - 1].content += parsed.token;
-              assistantDiv.textContent += parsed.token;
+              assistantDiv.innerHTML = marked.parse(chatHistory[chatHistory.length - 1].content);
+              chatMessages.scrollTop = chatMessages.scrollHeight;
             }
           } catch (e) { /* skip */ }
         }
