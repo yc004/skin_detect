@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基于改进 ConvNeXt 的皮肤疾病分类 — 答辩演示</title>
+<style>
+:root {
+  --bg: #0a0a14;
+  --slide-bg: #12121f;
+  --text: #e8e8e8;
+  --muted: #888;
+  --accent: #4fc3f7;
+  --accent2: #81c784;
+  --accent3: #ce93d8;
+  --high: #ef5350;
+  --medium: #ff9800;
+  --low: #66bb6a;
+  --border: #2a2a3e;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+  user-select: none;
+}
+
+/* Slide container */
+#slides { width:100%; height:100vh; position:relative; }
+.slide {
+  position: absolute; inset:0; display:none;
+  flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 60px; text-align: center;
+}
+.slide.active { display:flex; }
+
+/* Typography */
+.slide h1 { font-size: 2.4em; font-weight: 700; margin-bottom: 12px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.slide h2 { font-size: 1.8em; font-weight: 600; margin-bottom: 20px; color: var(--accent); }
+.slide h3 { font-size: 1.1em; color: var(--muted); font-weight:400; margin-bottom: 6px; }
+.slide p { font-size: 1.05em; color: var(--muted); line-height: 1.8; max-width: 800px; }
+.slide .tag { display:inline-block; padding:3px 10px; border-radius:12px; font-size:.75em; margin:2px; }
+.tag-red { background:#3a1a1a; color:var(--high); }
+.tag-yellow { background:#2a2a1a; color:var(--medium); }
+.tag-green { background:#1a2a1a; color:var(--low); }
+.tag-blue { background:#1a2a3a; color:var(--accent); }
+
+/* Tables */
+.tbl { border-collapse:collapse; margin:10px auto; font-size:.9em; }
+.tbl th { background:var(--border); padding:8px 14px; font-weight:600; color:var(--accent); }
+.tbl td { padding:7px 14px; border-bottom:1px solid var(--border); }
+.tbl .up { color:var(--accent2); font-weight:600; }
+.tbl .dn { color:var(--high); }
+
+/* Cards */
+.cards { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; margin:16px 0; }
+.card { background:var(--slide-bg); border:1px solid var(--border); border-radius:10px; padding:20px 24px; width:240px; text-align:left; }
+.card h4 { color:var(--accent); font-size:1em; margin-bottom:6px; }
+.card p { font-size:.85em; color:var(--muted); line-height:1.5; }
+.card .icon { font-size:1.8em; margin-bottom:6px; }
+
+/* Big numbers */
+.big-num { font-size:3em; font-weight:800; background:linear-gradient(135deg, var(--accent2), var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.big-num-sub { font-size:.9em; color:var(--muted); }
+
+/* Bar chart inline */
+.bar-row { display:flex; align-items:center; gap:10px; margin:4px 0; font-size:.85em; width:480px; }
+.bar-row .lbl { flex:0 0 160px; text-align:right; }
+.bar-row .track { flex:1; height:10px; background:var(--border); border-radius:5px; overflow:hidden; }
+.bar-row .fill { height:100%; border-radius:5px; transition:width .5s; }
+.bar-row .val { flex:0 0 50px; text-align:right; color:var(--muted); }
+
+/* Two column */
+.cols { display:flex; gap:30px; align-items:center; justify-content:center; }
+.col { flex:1; text-align:center; }
+
+/* Nav */
+#nav { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:100; }
+#nav span { width:30px; height:4px; background:var(--border); border-radius:2px; cursor:pointer; transition:background .2s; }
+#nav span.active { background:var(--accent); }
+#pageNum { position:fixed; bottom:16px; right:24px; font-size:.75em; color:var(--muted); z-index:100; }
+#hint { position:fixed; bottom:28px; left:24px; font-size:.7em; color:#444; z-index:100; }
+
+/* Print */
+@media print {
+  body { overflow:visible; height:auto; }
+  .slide { display:flex !important; position:relative; page-break-after:always; min-height:100vh; }
+  #nav, #pageNum, #hint { display:none; }
+}
+
+/* Diagram boxes */
+.diagram { display:flex; align-items:center; gap:12px; font-size:.85em; margin:12px 0; }
+.diagram .box { background:var(--slide-bg); border:1px solid var(--border); border-radius:8px; padding:12px 18px; text-align:center; }
+.diagram .box.accent { border-color:var(--accent); }
+.diagram .arrow { color:var(--accent); font-size:1.2em; }
+
+/* Highlight */
+.hl { color:var(--accent2); font-weight:600; }
+.hl-red { color:var(--high); font-weight:600; }
+.hl-yellow { color:var(--medium); font-weight:600; }
+</style>
+</head>
+<body>
+
+<div id="slides">
+
+<!-- S1: Cover -->
+<div class="slide active" data-n="1">
+  <h1>基于改进 ConvNeXt 的<br>多类别皮肤疾病智能分类系统</h1>
+  <p style="font-size:1.1em; margin-top:8px;">22 类皮肤疾病 · 82.20% 准确率 · Grad-CAM 可视化 · AI 辅助诊断</p>
+  <div style="margin-top:30px; display:flex; gap:16px;">
+    <span class="tag tag-blue">ConvNeXt V2</span>
+    <span class="tag tag-green">GeM Pooling</span>
+    <span class="tag tag-yellow">EMA</span>
+    <span class="tag tag-blue">Grad-CAM</span>
+    <span class="tag tag-green">LLM 辅助</span>
+  </div>
+  <div style="margin-top:40px; color:var(--muted); font-size:.85em;">
+    <p>答辩演示</p>
+  </div>
+</div>
+
+<!-- S2: Problem Background -->
+<div class="slide" data-n="2">
+  <h2>研究背景与问题</h2>
+  <div class="cards">
+    <div class="card"><div class="icon">🌍</div><h4>疾病负担重</h4><p>全球约 9 亿皮肤病患者，皮肤癌发病率持续上升</p></div>
+    <div class="card"><div class="icon">🏥</div><h4>医疗资源不均</h4><p>非洲部分地区每百万人 < 1 名皮肤科医生，基层医院严重短缺</p></div>
+    <div class="card"><div class="icon">🔬</div><h4>诊断主观性强</h4><p>不同医生对同一皮损诊断差异大，不典型病例易误判</p></div>
+  </div>
+  <div style="margin-top:20px; padding:14px 24px; background:var(--slide-bg); border-radius:8px; border-left:3px solid var(--accent);">
+    <p><b>核心挑战：</b>细粒度识别难 · 特征坍缩 · 池化策略固化 · 缺乏交互工具</p>
+  </div>
+</div>
+
+<!-- S3: Dataset -->
+<div class="slide" data-n="3">
+  <h2>数据集：Skin Disease Dataset</h2>
+  <table class="tbl">
+    <tr><th>属性</th><th>数值</th></tr>
+    <tr><td>类别数</td><td><b>22 类</b> 皮肤疾病</td></tr>
+    <tr><td>训练集</td><td>13,898 张</td></tr>
+    <tr><td>测试集</td><td>1,546 张</td></tr>
+    <tr><td>总计</td><td><b>15,444 张</b></td></tr>
+    <tr><td>风险分级</td><td><span class="tag tag-red">HIGH×1</span> <span class="tag tag-yellow">MEDIUM×4</span> <span class="tag tag-green">LOW×17</span></td></tr>
+  </table>
+  <p style="margin-top:12px; font-size:.85em;">数据不均衡：最多 1,840 例 (正常) vs 最少 275 例 (念珠菌病)，相差 6.7 倍</p>
+</div>
+
+<!-- S4: Technical Route -->
+<div class="slide" data-n="4">
+  <h2>技术路线总览</h2>
+  <div class="diagram" style="flex-direction:column; gap:16px;">
+    <div class="box" style="width:500px;"><b>数据层</b><br>15,444 张 · 22 类 · 7 种数据增强</div>
+    <div class="arrow">▼</div>
+    <div class="box accent" style="width:500px;"><b>模型层 — 三项改进</b><br>ConvNeXt V2 (GRN) + GeM Pooling + EMA</div>
+    <div class="arrow">▼</div>
+    <div class="box" style="width:500px;"><b>分析层</b><br>Grad-CAM 注意力可视化 + 大模型 AI 辅助建议</div>
+    <div class="arrow">▼</div>
+    <div class="box" style="width:500px;"><b>应用层</b><br>Flask Web 应用 + ONNX 跨平台部署</div>
+  </div>
+</div>
+
+<!-- S5: Architecture Comparison -->
+<div class="slide" data-n="5">
+  <h2>架构对比：基线 → 改进</h2>
+  <div class="cols">
+    <div class="col">
+      <h3>基线模型</h3>
+      <div class="box" style="text-align:left; font-size:.8em; line-height:2;">
+        ConvNeXt V1 Backbone<br>
+        &nbsp;&nbsp;DWConv→LN→1×1→GELU→1×1<br>
+        &nbsp;&nbsp;+ LayerScale + DropPath<br>
+        ↓<br>
+        <b>AdaptiveAvgPool2d</b><br>
+        ↓<br>
+        LayerNorm → Linear(768, 22)
+      </div>
+      <p style="margin-top:8px; font-size:.85em;">参数量 27.84M | Val Acc 79.80%</p>
+    </div>
+    <div style="color:var(--accent); font-size:2em;">→</div>
+    <div class="col">
+      <h3>改进模型</h3>
+      <div class="box accent" style="text-align:left; font-size:.8em; line-height:2;">
+        ConvNeXt <b>V2</b> Backbone<br>
+        &nbsp;&nbsp;... + <span class="hl">GRN</span> ← 新增<br>
+        ↓<br>
+        <b>GeM Pooling</b> (可学习 p) ← 改动<br>
+        ↓<br>
+        LayerNorm → Linear(768, 22)<br>
+        <b>EMA</b> (decay=0.999) ← 训练新增
+      </div>
+      <p style="margin-top:8px; font-size:.85em;">参数量 27.88M | Val Acc <span class="hl">82.20%</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- S6: GRN Explained -->
+<div class="slide" data-n="6">
+  <h2>改进一：GRN 全局响应归一化</h2>
+  <div style="font-size:1.3em; margin:10px 0; font-family:serif;">
+    GRN(X<sub>i</sub>) = γ · X<sub>i</sub> / √(‖X<sub>i</sub>‖² + ε) + β
+  </div>
+  <p style="max-width:650px;">对每个空间位置沿通道维度做 <b>L2 归一化</b>，插入每个 ConvNeXt block 末尾</p>
+  <div class="cards" style="margin-top:16px;">
+    <div class="card"><h4>增强特征多样性</h4><p>归一化后各通道响应被重新标定</p></div>
+    <div class="card"><h4>抑制特征坍缩</h4><p>强制各通道保持不同响应模式</p></div>
+    <div class="card"><h4>突出显著区域</h4><p>高激活区域被放大，背景被抑制</p></div>
+  </div>
+  <p style="margin-top:12px; font-size:.8em; color:var(--muted);">ConvNeXt V2 = V1 + GRN (每个 block) + FCMAE 自监督预训练</p>
+</div>
+
+<!-- S7: GeM Pooling -->
+<div class="slide" data-n="7">
+  <h2>改进二：GeM Pooling 广义均值池化</h2>
+  <div style="font-size:1.3em; margin:10px 0; font-family:serif;">
+    f<sup>(g)</sup> = [ 1/|Ω| · Σ x<sup>p</sup> ]<sup>1/p</sup>
+  </div>
+  <div class="cards" style="margin-top:12px;">
+    <div class="card"><h4>p = 1</h4><p>退化为平均池化（GAP）<br>所有位置等权重</p></div>
+    <div class="card"><h4>p = 3</h4><p>聚焦高响应区域<br>保留全局信息</p></div>
+    <div class="card"><h4>p → ∞</h4><p>逼近最大池化（GMP）<br>仅保留最强位置</p></div>
+  </div>
+  <div style="margin-top:16px; padding:12px 20px; background:#2a2a1a; border-radius:8px; border-left:3px solid var(--medium);">
+    <p><span class="hl-yellow">关键设计决策：</span>p<sub>init</sub> = <b>1.0</b> (非文献默认 3.0)</p>
+    <p style="font-size:.85em;">p=3 导致首轮 Val Acc 仅 5.9%（噪声放大） → p=1 从 GAP 起步，训练中自动增长</p>
+  </div>
+</div>
+
+<!-- S8: EMA -->
+<div class="slide" data-n="8">
+  <h2>改进三：EMA 指数滑动平均</h2>
+  <div style="font-size:1.3em; margin:10px 0; font-family:serif;">
+    θ<sub>shadow</sub><sup>(t)</sup> = 0.999 · θ<sub>shadow</sub><sup>(t-1)</sup> + 0.001 · θ<sup>(t)</sup>
+  </div>
+  <div class="cards" style="margin-top:16px;">
+    <div class="card"><h4>平滑参数波动</h4><p>等效窗口 ~1000 步<br>降低单 batch 噪声</p></div>
+    <div class="card"><h4>等价模型集成</h4><p>Polyak 平均的在线近似<br>零推理开销</p></div>
+    <div class="card"><h4>改善小样本</h4><p>小样本类别参数估计更稳定<br>Candidiasis F1 +4.2%</p></div>
+  </div>
+  <p style="margin-top:12px; font-size:.85em;">decay 选 0.999：平衡平滑度 (0.99 不够) 与响应速度 (0.9999 太慢)</p>
+</div>
+
+<!-- S9: Results Overview -->
+<div class="slide" data-n="9">
+  <h2>实验结果总览</h2>
+  <table class="tbl">
+    <tr><th>指标</th><th>基线 (V1+Avg)</th><th>改进 (V2+GeM+EMA)</th><th>提升</th></tr>
+    <tr><td>验证集准确率</td><td>79.80%</td><td class="up">82.20%</td><td class="up">+2.40%</td></tr>
+    <tr><td>测试集准确率</td><td>80.47%</td><td class="up">81.69%</td><td class="up">+1.22%</td></tr>
+    <tr><td>Micro AUC</td><td>0.9740</td><td class="up">0.9816</td><td class="up">+0.0076</td></tr>
+    <tr><td>Macro F1</td><td>0.771</td><td class="up">0.801</td><td class="up">+3.0%</td></tr>
+    <tr><td>参数量</td><td>27.84M</td><td>27.88M</td><td>+0.17%</td></tr>
+  </table>
+  <div style="margin-top:20px; display:flex; gap:30px;">
+    <div style="text-align:center;"><div class="big-num">79.80%</div><div class="big-num-sub">基线 Val Acc</div></div>
+    <div style="color:var(--accent); font-size:2em; align-self:center;">→</div>
+    <div style="text-align:center;"><div class="big-num">82.20%</div><div class="big-num-sub">改进 Val Acc</div></div>
+  </div>
+</div>
+
+<!-- S10: Training Curves -->
+<div class="slide" data-n="10">
+  <h2>训练曲线对比</h2>
+  <div class="cols">
+    <div class="col">
+      <h3>基线 (V1)</h3>
+      <div style="width:300px; height:200px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted);">
+        <img src="/static/placeholder.svg" style="display:none" alt="">
+        📈 runs/convnext_tiny/<br>training_curves.png<br><br>
+        <small>最佳 Epoch 45 · 79.80%</small>
+      </div>
+    </div>
+    <div class="col">
+      <h3>改进 (V2+GeM+EMA)</h3>
+      <div style="width:300px; height:200px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted);">
+        📈 runs/convnextv2_tiny_GeM_EMA/<br>training_curves.png<br><br>
+        <small>最佳 Epoch 50 · 82.20%</small>
+      </div>
+    </div>
+  </div>
+  <p style="margin-top:12px; font-size:.85em;">改进模型初期收敛慢 (FCMAE 预训练 + GeM p 增长) 但最终收敛到更高水平</p>
+</div>
+
+<!-- S11: Per-Class Top 5 -->
+<div class="slide" data-n="11">
+  <h2>Per-Class 提升 Top 5</h2>
+  <table class="tbl">
+    <tr><th>类别</th><th>基线 F1</th><th>改进 F1</th><th>提升</th></tr>
+    <tr><td>Lupus（红斑狼疮）<span class="tag tag-yellow">MED</span></td><td>0.688</td><td class="up">0.809</td><td class="up">+17.6%</td></tr>
+    <tr><td>Bullous（大疱性）<span class="tag tag-yellow">MED</span></td><td>0.713</td><td class="up">0.795</td><td class="up">+11.5%</td></tr>
+    <tr><td>Lichen（苔藓）</td><td>0.693</td><td class="up">0.759</td><td class="up">+9.5%</td></tr>
+    <tr><td>Tinea（癣）</td><td>0.719</td><td class="up">0.782</td><td class="up">+8.8%</td></tr>
+    <tr><td>Sun Damage（日光损伤）</td><td>0.660</td><td class="up">0.712</td><td class="up">+7.9%</td></tr>
+  </table>
+  <p style="margin-top:10px; font-size:.85em;">共同特点：<b>纹理/色素变化</b>为主要特征 — GRN + GeM 对此类特征的捕获能力显著</p>
+</div>
+
+<!-- S12: Skin Cancer -->
+<div class="slide" data-n="12">
+  <h2>高风险类别：Skin Cancer 深度分析</h2>
+  <table class="tbl">
+    <tr><th>指标</th><th>基线</th><th>改进</th><th>变化</th><th>临床意义</th></tr>
+    <tr><td>Precision</td><td>70.54%</td><td class="dn">66.40%</td><td class="dn">-4.14%</td><td>假阳性增多</td></tr>
+    <tr><td><b>Recall</b></td><td>73.83%</td><td class="up">77.57%</td><td class="up">+3.74%</td><td><span class="hl">漏诊降低 3.7%</span></td></tr>
+    <tr><td>F1</td><td>0.721</td><td>0.716</td><td>-0.005</td><td>综合持平</td></tr>
+  </table>
+  <div style="margin-top:18px; padding:14px 24px; background:#3a1a1a; border-radius:8px; border-left:3px solid var(--high);">
+    <p><span class="hl-red">临床价值：</span>筛查场景中 <b>漏诊代价 >> 误报代价</b></p>
+    <p style="font-size:.85em;">假阳性可通过医生复核排除 · 假阴性可能导致延误治疗</p>
+  </div>
+</div>
+
+<!-- S13: ROC + Confusion Matrix -->
+<div class="slide" data-n="13">
+  <h2>ROC 曲线 & 混淆矩阵</h2>
+  <div class="cols">
+    <div class="col">
+      <h3>混淆矩阵对比</h3>
+      <div style="display:flex; gap:8px; justify-content:center;">
+        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
+          confusion_matrix.png<br>(基线)<br><br>对角线外<br>高频误分类较多
+        </div>
+        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
+          confusion_matrix.png<br>(改进)<br><br>对角线集中<br>跨类混淆减少
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <h3>ROC 曲线</h3>
+      <div style="display:flex; gap:8px; justify-content:center;">
+        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
+          roc_curves.png<br>(基线)<br><br>Micro AUC<br><b>0.974</b>
+        </div>
+        <div style="width:180px; height:180px; background:var(--slide-bg); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.75em; text-align:center;">
+          roc_curves.png<br>(改进)<br><br>Micro AUC<br><span class="hl"><b>0.982</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S14: Grad-CAM Comparison -->
+<div class="slide" data-n="14">
+  <h2>Grad-CAM 注意力可视化对比</h2>
+  <div class="cols">
+    <div class="col">
+      <h3>基线模型 (V1 + Avg)</h3>
+      <div style="width:280px; height:280px; background:var(--slide-bg); border-radius:10px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.8em; text-align:center;">
+        Grad-CAM 热力图<br>(Web 应用截图)<br><br>
+        <span style="color:var(--medium)">注意力较分散</span><br>
+        覆盖大片正常皮肤
+      </div>
+    </div>
+    <div class="col">
+      <h3>改进模型 (V2 + GeM + EMA)</h3>
+      <div style="width:280px; height:280px; background:var(--slide-bg); border-radius:10px; border:2px solid var(--accent); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.8em; text-align:center;">
+        Grad-CAM 热力图<br>(Web 应用截图)<br><br>
+        <span class="hl">注意力更聚焦</span><br>
+        精准定位病灶核心
+      </div>
+    </div>
+  </div>
+  <p style="margin-top:12px;">GeM Pooling 在训练中自动学习聚焦高判别性区域</p>
+</div>
+
+<!-- S15: System Demo -->
+<div class="slide" data-n="15">
+  <h2>Web 应用系统展示</h2>
+  <div class="cards">
+    <div class="card"><div class="icon">📸</div><h4>拖拽上传</h4><p>支持 JPG/PNG/BMP<br>自动触发分类</p></div>
+    <div class="card"><div class="icon">🔬</div><h4>即时分析</h4><p>中文 + 英文双语<br>置信度可视化</p></div>
+    <div class="card"><div class="icon">🔥</div><h4>注意力对比</h4><p>基线 vs 改进<br>Grad-CAM 并排</p></div>
+    <div class="card"><div class="icon">🤖</div><h4>AI 咨询</h4><p>SSE 流式报告<br>多轮对话</p></div>
+  </div>
+  <p style="margin-top:12px; font-size:.85em;">Flask + 原生 HTML/CSS/JS · SSE 流式传输 · AbortController 管理连接</p>
+</div>
+
+<!-- S16: Ablation -->
+<div class="slide" data-n="16">
+  <h2>消融分析：组件贡献拆解</h2>
+  <div style="text-align:left; width:500px;">
+    <div class="bar-row"><span class="lbl">V1 + Avg (基线)</span><div class="track"><div class="fill" style="width:79.8%;background:var(--muted)"></div></div><span class="val">79.80%</span></div>
+    <div class="bar-row"><span class="lbl">V2 + Avg (+GRN)</span><div class="track"><div class="fill" style="width:81%;background:var(--accent)"></div></div><span class="val">~81%</span></div>
+    <div class="bar-row"><span class="lbl">V2 + GeM</span><div class="track"><div class="fill" style="width:81.5%;background:var(--accent)"></div></div><span class="val">~81.5%</span></div>
+    <div class="bar-row"><span class="lbl">V2+GeM+EMA (最终)</span><div class="track"><div class="fill" style="width:82.2%;background:var(--accent2)"></div></div><span class="val"><b>82.20%</b></span></div>
+  </div>
+  <p style="margin-top:16px; font-size:.85em;">GRN ≈ +1.2% &nbsp;|&nbsp; GeM ≈ +0.5% &nbsp;|&nbsp; EMA ≈ +0.7% &nbsp;|&nbsp; <b>协同效应 > 简单相加</b></p>
+</div>
+
+<!-- S17: Innovation Points -->
+<div class="slide" data-n="17">
+  <h2>创新点总结</h2>
+  <div class="cards">
+    <div class="card" style="width:280px;"><div class="icon">1️⃣</div><h4>GeM p_init 策略改进</h4><p>从 3.0 → 1.0，解决收敛崩溃<br>Lupus F1 提升 <span class="hl">+17.6%</span></p></div>
+    <div class="card" style="width:280px;"><div class="icon">2️⃣</div><h4>GRN + GeM 协同机制</h4><p>特征多样性 × 区域聚焦<br>纹理类疾病效果显著</p></div>
+    <div class="card" style="width:280px;"><div class="icon">3️⃣</div><h4>完整交互系统</h4><p>分类 + Grad-CAM + LLM 对话<br>Flask + SSE 流式架构</p></div>
+    <div class="card" style="width:280px;"><div class="icon">4️⃣</div><h4>全面消融实验</h4><p>Per-Class / ROC / 混淆矩阵<br>高风险类别临床视角分析</p></div>
+  </div>
+</div>
+
+<!-- S18: Future Work -->
+<div class="slide" data-n="18">
+  <h2>未来展望</h2>
+  <div style="display:flex; gap:20px; font-size:.85em;">
+    <div class="box" style="flex:1;"><b>🔜 短期 (3-6月)</b><br><br>多数据集融合训练<br>病灶分割多任务学习<br>INT8 量化 → 移动端部署</div>
+    <div style="color:var(--accent); align-self:center;">→</div>
+    <div class="box" style="flex:1;"><b>📅 中期 (6-12月)</b><br><br>多模态 (图像+元数据)<br>纵向跟踪病灶变化<br>联邦学习隐私保护</div>
+    <div style="color:var(--accent); align-self:center;">→</div>
+    <div class="box accent" style="flex:1;"><b>🎯 长期 (12-18月)</b><br><br>临床前瞻性验证<br>医疗器械认证<br>跨医院协作部署</div>
+  </div>
+</div>
+
+<!-- S19: Thank You -->
+<div class="slide" data-n="19">
+  <h1>感谢聆听</h1>
+  <p style="font-size:1.1em; margin-top:10px;">请各位老师批评指正</p>
+  <div style="margin-top:30px; padding:14px 24px; background:var(--slide-bg); border-radius:8px;">
+    <p><b>GitHub:</b> https://github.com/yc004/skin_detect</p>
+  </div>
+  <div style="margin-top:30px; display:flex; gap:12px; font-size:.8em;">
+    <span class="tag tag-blue">ConvNeXt V2</span>
+    <span class="tag tag-green">GeM Pooling</span>
+    <span class="tag tag-yellow">EMA</span>
+    <span class="tag tag-blue">Grad-CAM</span>
+    <span class="tag tag-green">22 类</span>
+    <span class="tag tag-blue">82.20%</span>
+  </div>
+</div>
+
+</div><!-- /slides -->
+
+<!-- Navigation -->
+<div id="nav"></div>
+<div id="pageNum"></div>
+<div id="hint">← → 方向键翻页 | Home/End 跳转首尾</div>
+
+<script>
+// ============================================================
+// Slide Navigation
+// ============================================================
+const slides = document.querySelectorAll('.slide');
+const total = slides.length;
+let current = 0;
+
+// Build nav dots
+const nav = document.getElementById('nav');
+const pageNum = document.getElementById('pageNum');
+slides.forEach((_, i) => {
+  const dot = document.createElement('span');
+  dot.addEventListener('click', () => goTo(i));
+  nav.appendChild(dot);
+});
+const dots = nav.querySelectorAll('span');
+
+function goTo(n) {
+  if (n < 0 || n >= total) return;
+  slides[current].classList.remove('active');
+  dots[current].classList.remove('active');
+  current = n;
+  slides[current].classList.add('active');
+  dots[current].classList.add('active');
+  pageNum.textContent = `${current + 1} / ${total}`;
+}
+
+// Init
+goTo(0);
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+    e.preventDefault();
+    goTo(current + 1);
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    goTo(current - 1);
+  } else if (e.key === 'Home') {
+    e.preventDefault();
+    goTo(0);
+  } else if (e.key === 'End') {
+    e.preventDefault();
+    goTo(total - 1);
+  }
+});
+
+// Touch swipe
+let touchStartX = 0;
+document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', (e) => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 60) { goTo(dx < 0 ? current + 1 : current - 1); }
+});
+</script>
+
+</body>
+</html>

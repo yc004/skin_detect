@@ -311,6 +311,11 @@ def index():
                            model_info=MODEL_INFO)
 
 
+@app.route("/presentation")
+def presentation():
+    return render_template("presentation.html")
+
+
 # ============================================================
 # Routes — Classify
 # ============================================================
