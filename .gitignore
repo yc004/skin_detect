@@ -29,6 +29,7 @@ Thumbs.db
 
 # Config (contains API keys)
 config.json
+config.example.json
 
 # Gradio
 .gradio/
