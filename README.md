@@ -1,16 +1,12 @@
-# 🩺 Skin Lesion Detection System
+# 🩺 Skin Disease Classification
 
-**AI-Assisted Multi-Class Skin Lesion Detection with Improved YOLOv8**
+**AI-Assisted 22-Class Skin Disease Diagnosis with ConvNeXt-Tiny**
 
 ---
 
 ## Overview
 
-This project builds a deep learning system to **detect and classify skin lesions** in dermoscopic images. It uses an improved YOLOv8 architecture enhanced with:
-
-- **Coordinate Attention (CA)** — Better spatial localization for irregular lesion shapes
-- **Adaptive Spatial Feature Fusion (ASFF)** — Multi-scale fusion for varying lesion sizes
-- **Boundary-Sensitive Loss** — Tighter bounding boxes for medical imaging
+This project builds a deep learning system to **classify skin diseases** from clinical/dermoscopic images. It uses ConvNeXt-Tiny pretrained on ImageNet-22k, fine-tuned on a 22-class dermatology dataset.
 
 ## Quick Start
 
@@ -21,19 +17,13 @@ conda activate cv
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Generate pseudo-labels from classification dataset
-python utils/pseudo_label.py \
-    --raw dataset/SkinDisease/SkinDisease \
-    --out data \
-    --img-size 640
+# 3. Train the model
+python train.py --data dataset/SkinDisease/SkinDisease --epochs 50
 
-# 4. Train models (all 3 variants)
-python train.py --model all --epochs 100
+# 4. Run inference on a test image
+python detect.py --image test.jpg --cam
 
-# 5. Run detection on a test image
-python detect.py --compare baseline,boundary,improved --image data/images/test/example.jpg
-
-# 6. Launch interactive demo
+# 5. Launch interactive demo
 python demo.py
 ```
 
@@ -41,71 +31,57 @@ python demo.py
 
 ```
 skin_detect/
-├── data/
-│   ├── images/                  # YOLO-format images (train/val/test)
-│   ├── labels/                  # YOLO-format labels
-│   └── dataset.yaml             # Class definitions
+├── dataset/                     # Raw datasets
+│   └── SkinDisease/             # 22-class skin disease dataset
+│       └── SkinDisease/
+│           ├── Train/           # Training images by class
+│           └── Test/            # Test images by class
 ├── models/
-│   ├── yolov8s.yaml             # Baseline config
-│   ├── yolov8s_asff_ca.yaml     # Improved config
-│   ├── attention.py             # Coordinate Attention module
-│   └── asff.py                  # ASFF module
+│   └── __init__.py
 ├── utils/
-│   ├── pseudo_label.py          # Pseudo-label generation
-│   ├── loss.py                  # Boundary-sensitive loss
-│   ├── soft_nms.py              # Soft-NMS implementation
-│   └── visualize.py             # Visualization utilities
-├── runs/                        # Training outputs
-│   ├── baseline/
-│   ├── boundary/
-│   └── improved/
-├── results/                     # Detection outputs
+│   ├── visualize.py             # CAM, confusion matrix, training curves
+│   └── __init__.py
+├── runs/convnext/               # Training outputs
+│   ├── best.pt                  # Best model checkpoint
+│   ├── class_config.json        # Class names & risk levels
+│   ├── confusion_matrix.png
+│   └── training_curves.png
+├── results/                     # Inference outputs
 ├── train.py                     # Training script
-├── detect.py                    # Detection & comparison
+├── detect.py                    # Inference script
 ├── demo.py                      # Gradio web demo
 ├── requirements.txt
 └── README.md
 ```
 
-## Model Variants
+## Classification Classes (22)
 
-| Model | Architecture | Loss | Purpose |
-|-------|-------------|------|---------|
-| `baseline` | YOLOv8s | CIoU + DFL | Control baseline |
-| `boundary` | YOLOv8s | CIoU + DFL + Boundary | Isolate loss improvement |
-| `improved` | YOLOv8s + CA + ASFF | CIoU + DFL + Boundary | Full improvements |
-
-## Detection Classes
-
-| Class | Risk Level | Color |
-|-------|-----------|-------|
-| Skin Cancer | 🔴 HIGH | Red |
-| Actinic Keratosis | 🟡 MEDIUM | Orange |
-| Nevus (Mole) | 🟢 LOW | Cyan |
-| Seborrheic Keratosis | 🟢 LOW | Yellow |
-| Benign Tumor | 🟢 LOW | Green |
-| Vascular Lesion | 🟢 LOW | Magenta |
+| 🔴 HIGH Risk | 🟡 MEDIUM Risk | 🟢 LOW Risk |
+|-------------|---------------|------------|
+| Skin Cancer | Actinic Keratosis | Acne, Benign Tumors, Bullous |
+| | Lupus, Vasculitis | Candidiasis, Drug Eruption, Eczema |
+| | | Infestations/Bites, Lichen, Moles |
+| | | Psoriasis, Rosacea, Seborrheic Keratoses |
+| | | Sun/Sunlight Damage, Tinea, Unknown/Normal |
+| | | Vascular Tumors, Vitiligo, Warts |
 
 ## Training Configuration
 
-- **Input Size**: 640×640
-- **Optimizer**: AdamW, lr=1e-3, cosine annealing
-- **Batch Size**: 16
-- **Epochs**: 100
-- **Pretrained**: COCO weights (transfer learning)
+- **Architecture**: ConvNeXt-Tiny (28M params, pretrained on ImageNet-22k)
+- **Input Size**: 224×224
+- **Optimizer**: AdamW, lr=1e-4, cosine warm restarts
+- **Loss**: CrossEntropy with label smoothing (0.1)
+- **Batch Size**: 32
+- **Epochs**: 50 (with early stopping, patience=10)
+- **Augmentation**: RandCrop, Flip, Rotation, ColorJitter
 - **Device**: MPS (Apple Silicon) / CUDA / CPU
 
-## Key Innovations
+## Key Features
 
-1. **Pseudo-Label Generation**: CV-based segmentation (LAB color space, Otsu thresholding, morphological cleanup) converts classification images to detection format.
-
-2. **Coordinate Attention**: 1D horizontal + vertical pooling captures long-range spatial dependencies while preserving precise positional information — critical for irregular lesion boundaries.
-
-3. **ASFF Fusion**: Three FPN levels are adaptively fused with learned per-pixel weights, enabling detection heads to leverage multi-scale context.
-
-4. **Boundary-Sensitive Loss**: L1 edge-distance penalty on the four box boundaries encourages tight lesion fit, improving clinical relevance.
-
-5. **Soft-NMS**: Gaussian score decay prevents suppression of neighboring lesions in dense cases.
+- **Grad-CAM**: Visualize which regions the model focuses on for its prediction
+- **Risk Stratification**: Automatic HIGH/MEDIUM/LOW risk classification for clinical triage
+- **Label Smoothing**: Improves calibration and robustness
+- **Early Stopping**: Prevents overfitting
 
 ## ⚠️ Disclaimer
 

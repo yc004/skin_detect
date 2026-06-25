@@ -1,248 +1,201 @@
 #!/usr/bin/env python3
 """
-Skin Lesion Detection — Gradio Interactive Demo
+Skin Disease Classification — Gradio Interactive Demo.
 
 Features:
-  - Upload skin images for lesion detection
-  - Select model variant (baseline/boundary/improved)
-  - Compare two models side-by-side
-  - Show risk report with high-risk alerts
-  - Live webcam capture mode
+  - Upload skin images for disease classification
+  - Show top-3 predictions with confidence bars
+  - Risk level alerts for high-risk conditions
+  - Optional Grad-CAM visualization
 """
 
 import sys
 import os
+import json
 from pathlib import Path
 
 import cv2
 import numpy as np
 import gradio as gr
 
-# Register custom modules before anything else
-import ultralytics.nn.modules as ul_nn_modules
-import ultralytics.nn.tasks as ul_tasks
-from models.attention import CoordAtt
-from models.asff import ASFFHead
-
-ul_nn_modules.CoordAtt = CoordAtt
-ul_nn_modules.ASFFHead = ASFFHead
-ul_tasks.CoordAtt = CoordAtt
-ul_tasks.ASFFHead = ASFFHead
-
-from ultralytics import YOLO
-
-from utils.visualize import (
-    draw_detections, draw_legend, create_comparison,
-    generate_risk_report, FRIENDLY_NAMES, CLASS_CONFIG,
-)
-from utils.soft_nms import soft_nms
-
 import torch
+import torch.nn.functional as F
+import torchvision.transforms as transforms
+import timm
+
+from utils.visualize import draw_classification_result, draw_gradcam
 
 
 # ============================================================
-# Model Cache
+# Model Loading
 # ============================================================
 
-MODEL_CACHE = {}
+MODEL = None
+CLASS_NAMES = []
+CLASS_RISK = {}
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
-
-MODEL_PATHS = {
-    "baseline": "runs/baseline/weights/best.pt",
-    "boundary": "runs/boundary/weights/best.pt",
-    "improved": "runs/improved/weights/best.pt",
-}
-
-MODEL_DESCRIPTIONS = {
-    "baseline": "YOLOv8s Standard (CIoU + DFL)",
-    "boundary": "YOLOv8s + Boundary-Sensitive Loss",
-    "improved": "YOLOv8s + ASFF + CA + Boundary Loss",
-}
+MODEL_PATH = "runs/convnext/best.pt"
+TRANSFORM = None
 
 
-def get_model(variant: str):
-    """Load or retrieve cached model."""
-    if variant not in MODEL_CACHE:
-        path = MODEL_PATHS.get(variant)
-        if not path or not os.path.exists(path):
-            return None, f"Model '{variant}' not found at {path}\nPlease train this variant first."
-        try:
-            model = YOLO(path)
-            if DEVICE != "cpu":
-                model.to(DEVICE)
-            MODEL_CACHE[variant] = model
-        except Exception as e:
-            return None, f"Failed to load model: {e}"
-    return MODEL_CACHE[variant], None
+def load_model_once():
+    """Load model on first request (lazy)."""
+    global MODEL, CLASS_NAMES, CLASS_RISK, TRANSFORM
+
+    if MODEL is not None:
+        return
+
+    if not os.path.exists(MODEL_PATH):
+        return
+
+    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False)
+    CLASS_NAMES = checkpoint.get("class_names", [])
+    CLASS_RISK = checkpoint.get("class_risk", {})
+
+    if not CLASS_NAMES:
+        config_path = Path(MODEL_PATH).parent / "class_config.json"
+        if config_path.exists():
+            with open(config_path) as f:
+                config = json.load(f)
+            CLASS_NAMES = config["class_names"]
+            CLASS_RISK = config.get("class_risk", {})
+
+    num_classes = len(CLASS_NAMES)
+    MODEL = timm.create_model(
+        "convnext_tiny.fb_in22k_ft_in1k",
+        pretrained=False,
+        num_classes=num_classes,
+    )
+    MODEL.load_state_dict(checkpoint["model_state_dict"])
+    MODEL = MODEL.to(DEVICE)
+    MODEL.eval()
+
+    TRANSFORM = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize(int(224 * 1.14)),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
+
+    print(f"Model loaded: {MODEL_PATH} ({num_classes} classes) on {DEVICE}")
 
 
 # ============================================================
-# Detection Logic
+# Inference
 # ============================================================
 
-def detect(
-    image: np.ndarray,
-    model_variant: str = "improved",
-    conf_threshold: float = 0.25,
-    use_soft_nms: bool = False,
-) -> tuple:
-    """
-    Run detection on an image.
+@torch.no_grad()
+def classify(image: np.ndarray, show_cam: bool = False):
+    """Run classification and return annotated image + report HTML."""
+    load_model_once()
 
-    Returns: (annotated_image, report_html)
-    """
+    if MODEL is None:
+        return image, "<p style='color:red'>Model not found. Train first: python train.py</p>"
+
     if image is None:
         return None, "<p style='color:gray'>No image provided.</p>"
 
-    model, error = get_model(model_variant)
-    if error:
-        return image, f"<p style='color:red'>{error}</p>"
+    h, w = image.shape[:2]
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # Run inference
-    results = model.predict(
-        image, imgsz=640, conf=conf_threshold, iou=0.45, verbose=False,
-    )
+    # Inference
+    tensor = TRANSFORM(image_rgb).unsqueeze(0).to(DEVICE)
+    logits = MODEL(tensor)
+    probs = F.softmax(logits, dim=1)
 
-    result = results[0]
-    if result.boxes is None or len(result.boxes) == 0:
-        annotated = image.copy()
-        report_html = _build_report_html(None, model_variant)
-        return annotated, report_html
+    topk_probs, topk_indices = torch.topk(probs, min(3, len(CLASS_NAMES)))
+    topk_probs = topk_probs.cpu().numpy()[0]
+    topk_indices = topk_indices.cpu().numpy()[0]
 
-    boxes = result.boxes.xyxy.cpu().numpy()
-    classes = result.boxes.cls.cpu().numpy()
-    confidences = result.boxes.conf.cpu().numpy()
+    predictions = []
+    for prob, idx in zip(topk_probs, topk_indices):
+        name = CLASS_NAMES[idx]
+        risk = CLASS_RISK.get(name, "LOW")
+        predictions.append({"class": name, "confidence": float(prob), "risk": risk})
 
-    # Soft-NMS
-    if use_soft_nms and len(boxes) > 1:
-        boxes_t, scores_t = torch.from_numpy(boxes).float(), torch.from_numpy(confidences).float()
-        keep, updated = soft_nms(boxes_t, scores_t, sigma=0.5)
-        boxes = boxes[keep.numpy()]
-        classes = classes[keep.numpy()]
-        confidences = updated[keep.numpy()].numpy()
-
-    # Visualize
-    annotated = draw_detections(image, boxes, classes, confidences, normalized=False)
+    # Draw result
+    annotated = draw_classification_result(image, predictions, CLASS_RISK)
 
     # Build report
-    det_list = [(c, conf, b) for c, conf, b in zip(classes, confidences, boxes)]
-    report = generate_risk_report(det_list)
-    report_html = _build_report_html(report, model_variant)
+    report_html = _build_report(predictions)
 
-    return annotated, report_html
+    # Grad-CAM
+    if show_cam:
+        cam_image = draw_gradcam(MODEL, image, CLASS_NAMES, TRANSFORM, DEVICE)
+        return annotated, report_html, cam_image
 
-
-def compare_detect(
-    image: np.ndarray,
-    model_a: str = "baseline",
-    model_b: str = "improved",
-    conf_threshold: float = 0.25,
-) -> np.ndarray:
-    """Compare two model variants side-by-side."""
-    if image is None:
-        return None
-
-    images = []
-    titles = []
-
-    for variant in [model_a, model_b]:
-        model, error = get_model(variant)
-        if error:
-            err_img = np.zeros((image.shape[0], image.shape[1], 3), dtype=np.uint8)
-            cv2.putText(err_img, f"Model not available", (50, 100),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 100, 255), 2)
-            images.append(err_img)
-            titles.append(f"{variant}: ERROR")
-            continue
-
-        results = model.predict(image, imgsz=640, conf=conf_threshold, iou=0.45, verbose=False)
-        result = results[0]
-
-        if result.boxes is not None and len(result.boxes) > 0:
-            boxes = result.boxes.xyxy.cpu().numpy()
-            classes = result.boxes.cls.cpu().numpy()
-            confidences = result.boxes.conf.cpu().numpy()
-            annotated = draw_detections(image.copy(), boxes, classes, confidences, normalized=False)
-        else:
-            annotated = image.copy()
-
-        annotated = draw_legend(annotated)
-        images.append(annotated)
-        titles.append(f"{MODEL_DESCRIPTIONS.get(variant, variant)}")
-
-    return create_comparison(images, titles)
+    return annotated, report_html, None
 
 
 # ============================================================
-# Report Builder
+# Report HTML
 # ============================================================
 
-def _build_report_html(report: dict, model_variant: str) -> str:
-    """Build an HTML report string for display in Gradio."""
-    model_label = MODEL_DESCRIPTIONS.get(model_variant, model_variant)
+def _build_report(predictions: list) -> str:
+    """Build HTML report."""
+    top = predictions[0]
+    risk = top["risk"]
+    risk_color = {"HIGH": "#ef5350", "MEDIUM": "#ff9800", "LOW": "#81c784"}[risk]
+    risk_icon = {"HIGH": "🚨", "MEDIUM": "⚠️", "LOW": "✅"}[risk]
 
-    if report is None or report["total_lesions"] == 0:
-        return f"""
-        <div style="padding:20px; background:#1a1a2e; border-radius:12px; color:#e0e0e0; font-family:sans-serif;">
-            <h3 style="margin-top:0; color:#4fc3f7;">🔬 Detection Results</h3>
-            <p style="color:#aaa;">Model: <b>{model_label}</b></p>
-            <div style="padding:15px; background:#2a2a3e; border-radius:8px; margin:10px 0;">
-                <p style="color:#81c784; font-size:16px;">✅ No lesions detected</p>
-            </div>
-            <p style="color:#888; font-size:12px;">This image appears clean. If clinical concern exists, consult a dermatologist.</p>
-        </div>
-        """
-
-    # Risk summary
-    if report["alert"]:
-        alert_color = "#ef5350" if report["high_risk_count"] > 0 else "#ff9800"
-        alert_icon = "🚨" if report["high_risk_count"] > 0 else "⚠️"
-    else:
-        alert_color = "#81c784"
-        alert_icon = "✅"
-
-    lesion_rows = ""
-    for i, lesion in enumerate(report["lesions"]):
-        risk_color = {"HIGH": "#ef5350", "MEDIUM": "#ff9800", "LOW": "#81c784"}[lesion["risk"]]
-        lesion_rows += f"""
-        <tr>
-            <td style="padding:8px; border-bottom:1px solid #333;">{i+1}</td>
-            <td style="padding:8px; border-bottom:1px solid #333;">{lesion['class']}</td>
-            <td style="padding:8px; border-bottom:1px solid #333; color:{risk_color};">{lesion['risk']}</td>
-            <td style="padding:8px; border-bottom:1px solid #333;">{lesion['confidence']:.1%}</td>
+    rows = ""
+    for i, pred in enumerate(predictions):
+        r_color = {"HIGH": "#ef5350", "MEDIUM": "#ff9800", "LOW": "#81c784"}[pred["risk"]]
+        r_icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}[pred["risk"]]
+        bold = "font-weight:bold;" if i == 0 else ""
+        rows += f"""
+        <tr style="{bold}">
+            <td style="padding:8px; border-bottom:1px solid #333;">{r_icon}</td>
+            <td style="padding:8px; border-bottom:1px solid #333;">{pred['class']}</td>
+            <td style="padding:8px; border-bottom:1px solid #333; color:{r_color};">{pred['risk']}</td>
+            <td style="padding:8px; border-bottom:1px solid #333;">{pred['confidence']:.1%}</td>
         </tr>"""
 
-    return f"""
-    <div style="padding:20px; background:#1a1a2e; border-radius:12px; color:#e0e0e0; font-family:sans-serif; max-height:600px; overflow-y:auto;">
-        <h3 style="margin-top:0; color:#4fc3f7;">🔬 Detection Results</h3>
-        <p style="color:#aaa;">Model: <b>{model_label}</b></p>
-        <p style="color:#aaa;">Lesions found: <b>{report['total_lesions']}</b></p>
+    alert_html = ""
+    if risk == "HIGH":
+        alert_html = f"""
+        <div style="padding:15px; background:#3a1a1a; border-radius:8px; margin:10px 0; border-left:4px solid {risk_color};">
+            <span style="font-size:20px;">{risk_icon}</span>
+            <b style="color:{risk_color};">HIGH RISK: {top['class']}</b>
+            <p style="color:#ccc; margin:5px 0 0 0;">Immediate dermatologist consultation is recommended.</p>
+        </div>"""
+    elif risk == "MEDIUM":
+        alert_html = f"""
+        <div style="padding:15px; background:#2a2a1a; border-radius:8px; margin:10px 0; border-left:4px solid {risk_color};">
+            <span style="font-size:20px;">{risk_icon}</span>
+            <b style="color:{risk_color};">MEDIUM RISK: {top['class']}</b>
+            <p style="color:#ccc; margin:5px 0 0 0;">Clinical follow-up is advised.</p>
+        </div>"""
+    else:
+        alert_html = f"""
+        <div style="padding:15px; background:#1a2a1a; border-radius:8px; margin:10px 0; border-left:4px solid {risk_color};">
+            <span style="font-size:20px;">{risk_icon}</span>
+            <b style="color:{risk_color};">Low Risk: {top['class']}</b>
+            <p style="color:#ccc; margin:5px 0 0 0;">Likely benign. Routine monitoring suggested.</p>
+        </div>"""
 
-        <div style="padding:15px; background:#2a2a3e; border-radius:8px; margin:10px 0; border-left:4px solid {alert_color};">
-            <span style="font-size:20px;">{alert_icon}</span>
-            <b style="color:{alert_color};">{report['alert_message'] if report['alert'] else 'No high-risk findings'}</b>
-        </div>
+    return f"""
+    <div style="padding:20px; background:#1a1a2e; border-radius:12px; color:#e0e0e0; font-family:sans-serif;">
+        <h3 style="margin-top:0; color:#4fc3f7;">🔬 Classification Results</h3>
+        <p style="color:#aaa;">Model: <b>ConvNeXt-Tiny</b> | 22 classes</p>
+
+        {alert_html}
 
         <table style="width:100%; border-collapse:collapse; margin-top:15px;">
         <thead>
             <tr style="background:#2a2a3e;">
-                <th style="padding:8px; text-align:left;">#</th>
-                <th style="padding:8px; text-align:left;">Lesion Type</th>
+                <th style="padding:8px; text-align:left;"></th>
+                <th style="padding:8px; text-align:left;">Condition</th>
                 <th style="padding:8px; text-align:left;">Risk</th>
                 <th style="padding:8px; text-align:left;">Confidence</th>
             </tr>
         </thead>
-        <tbody>
-            {lesion_rows}
-        </tbody>
+        <tbody>{rows}</tbody>
         </table>
 
         <div style="margin-top:15px; padding:10px; background:#1a1a1a; border-radius:6px; font-size:11px; color:#888;">
-            <p><b>Risk Key:</b>
-            <span style="color:#ef5350;">🔴 HIGH — Suspected malignancy, immediate referral</span> |
-            <span style="color:#ff9800;">🟡 MEDIUM — Clinical follow-up advised</span> |
-            <span style="color:#81c784;">🟢 LOW — Benign appearance</span>
-            </p>
             <p>⚠️ <i>This is an AI research tool. All results require clinical verification.</i></p>
         </div>
     </div>
@@ -254,195 +207,73 @@ def _build_report_html(report: dict, model_variant: str) -> str:
 # ============================================================
 
 def build_ui():
-    """Build the Gradio interface."""
-    theme = gr.themes.Soft(
-        primary_hue="blue",
-        secondary_hue="slate",
-        neutral_hue="slate",
-    )
+    theme = gr.themes.Soft(primary_hue="blue", secondary_hue="slate")
 
     with gr.Blocks(
         theme=theme,
-        title="Skin Lesion Detection System",
+        title="Skin Disease Classification — ConvNeXt",
         css="""
-        .risk-high { color: #ef5350 !important; font-weight: bold; }
-        .risk-medium { color: #ff9800 !important; }
-        .risk-low { color: #81c784 !important; }
         footer { visibility: hidden; }
         """
     ) as demo:
         gr.Markdown("""
-        # 🩺 Skin Lesion Detection System
-        ### AI-Assisted Multi-Class Skin Lesion Detection with Improved YOLOv8
+        # 🩺 Skin Disease Classification
+        ### AI-Assisted 22-Class Skin Disease Diagnosis with ConvNeXt-Tiny
         ---
         """)
 
         with gr.Tabs():
-            # Tab 1: Single image detection
-            with gr.TabItem("📸 Image Detection"):
+            # Tab 1: Classification
+            with gr.TabItem("📸 Classify"):
                 with gr.Row():
                     with gr.Column(scale=3):
+                        input_image = gr.Image(label="Upload Skin Image", type="numpy", height=480)
                         with gr.Row():
-                            input_image = gr.Image(
-                                label="Upload Skin Image",
-                                type="numpy",
-                                height=480,
-                            )
-                        with gr.Row():
-                            model_select = gr.Dropdown(
-                                choices=list(MODEL_PATHS.keys()),
-                                value="improved",
-                                label="Model Variant",
-                                info="Choose which model to use for detection",
-                            )
-                        with gr.Row():
-                            conf_slider = gr.Slider(
-                                minimum=0.1, maximum=0.9, value=0.25, step=0.05,
-                                label="Confidence Threshold",
-                                info="Lower = more detections, higher = fewer false positives",
-                            )
-                            soft_nms_check = gr.Checkbox(
-                                label="Use Soft-NMS",
-                                value=False,
-                                info="Prevents suppression in dense lesions",
-                            )
-                        detect_btn = gr.Button("🔍 Detect Lesions", variant="primary", size="lg")
+                            cam_checkbox = gr.Checkbox(label="Show Grad-CAM Heatmap", value=False)
+                        classify_btn = gr.Button("🔬 Analyze", variant="primary", size="lg")
 
                     with gr.Column(scale=2):
-                        output_image = gr.Image(
-                            label="Detection Results",
-                            type="numpy",
-                            height=480,
-                        )
-                        report_html = gr.HTML(label="Detection Report")
-
-                detect_btn.click(
-                    fn=detect,
-                    inputs=[input_image, model_select, conf_slider, soft_nms_check],
-                    outputs=[output_image, report_html],
-                )
-
-            # Tab 2: Model Comparison
-            with gr.TabItem("⚖️ Model Comparison"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        compare_image = gr.Image(
-                            label="Upload Skin Image",
-                            type="numpy",
-                            height=400,
-                        )
-                        with gr.Row():
-                            model_a_select = gr.Dropdown(
-                                choices=list(MODEL_PATHS.keys()),
-                                value="baseline",
-                                label="Model A (Left)",
-                            )
-                            model_b_select = gr.Dropdown(
-                                choices=list(MODEL_PATHS.keys()),
-                                value="improved",
-                                label="Model B (Right)",
-                            )
-                        compare_conf = gr.Slider(
-                            minimum=0.1, maximum=0.9, value=0.25, step=0.05,
-                            label="Confidence Threshold",
-                        )
-                        compare_btn = gr.Button("🔍 Compare Models", variant="primary", size="lg")
-
-                    with gr.Column(scale=2):
-                        comparison_output = gr.Image(
-                            label="Side-by-Side Comparison",
-                            type="numpy",
-                            height=500,
-                        )
-
-                compare_btn.click(
-                    fn=compare_detect,
-                    inputs=[compare_image, model_a_select, model_b_select, compare_conf],
-                    outputs=[comparison_output],
-                )
-
-            # Tab 3: Webcam / Live Capture
-            with gr.TabItem("📷 Live Capture"):
-                gr.Markdown("""
-                ### 📷 Real-Time Lesion Detection
-
-                Use your webcam or upload a screen capture for live detection.
-                Works best with dermoscopic images displayed on screen.
-                """)
+                        output_image = gr.Image(label="Result", type="numpy", height=480)
+                        report_html = gr.HTML(label="Report")
 
                 with gr.Row():
-                    webcam_input = gr.Image(
-                        label="Webcam / Screen Capture",
-                        type="numpy",
-                        source="webcam",
-                        streaming=True,
-                        height=400,
-                    )
-                    webcam_output = gr.Image(
-                        label="Live Detection",
-                        type="numpy",
-                        height=400,
-                    )
+                    cam_output = gr.Image(label="Grad-CAM (Activation Map)", type="numpy", visible=True, height=300)
 
-                with gr.Row():
-                    webcam_model = gr.Dropdown(
-                        choices=list(MODEL_PATHS.keys()),
-                        value="improved",
-                        label="Model",
-                        scale=1,
-                    )
-                    webcam_conf = gr.Slider(
-                        0.1, 0.9, 0.25, step=0.05,
-                        label="Confidence",
-                        scale=1,
-                    )
-                    webcam_btn = gr.Button("▶️ Start Detection", variant="primary", scale=1)
-
-                webcam_btn.click(
-                    fn=detect,
-                    inputs=[webcam_input, webcam_model, webcam_conf, gr.Checkbox(value=False, visible=False)],
-                    outputs=[webcam_output, gr.HTML(visible=False)],
+                classify_btn.click(
+                    fn=classify,
+                    inputs=[input_image, cam_checkbox],
+                    outputs=[output_image, report_html, cam_output],
                 )
 
-            # Tab 4: About
+            # Tab 2: About
             with gr.TabItem("ℹ️ About"):
                 gr.Markdown("""
                 ## About This System
 
-                This is a research prototype for **AI-assisted skin lesion detection** based on an improved YOLOv8 architecture.
+                ### 🧠 Model
+                - **Architecture**: ConvNeXt-Tiny (pretrained on ImageNet-22k)
+                - **Task**: 22-class skin disease classification
+                - **Input**: 224×224 RGB image
 
-                ### 🧠 Model Variants
-                | Variant | Architecture | Loss |
-                |---------|-------------|------|
-                | **Baseline** | Standard YOLOv8s | CIoU + DFL |
-                | **Boundary** | Standard YOLOv8s | CIoU + DFL + Boundary-Sensitive |
-                | **Improved** | YOLOv8s + CA + ASFF | CIoU + DFL + Boundary-Sensitive |
-
-                ### 🔧 Improvements
-                - **Coordinate Attention (CA)**: Enhances spatial localization for irregular lesion shapes
-                - **Adaptive Spatial Feature Fusion (ASFF)**: Multi-scale fusion for varying lesion sizes
-                - **Boundary-Sensitive Loss**: Tighter bounding boxes around lesion edges
-                - **Soft-NMS**: Prevents missed detections in dense multi-lesion cases
-
-                ### 🎯 Detection Classes
-                - 🔴 **Skin Cancer** (HIGH RISK)
-                - 🟡 **Actinic Keratosis** (MEDIUM RISK)
-                - 🟢 **Nevus (Mole)** (LOW RISK)
-                - 🟢 **Seborrheic Keratosis** (LOW RISK)
-                - 🟢 **Benign Tumor** (LOW RISK)
-                - 🟢 **Vascular Lesion** (LOW RISK)
-                - 🟢 **Wart** (LOW RISK)
-                - 🟢 **Infestation / Bite** (LOW RISK)
+                ### 🎯 Classes (22)
+                | 🔴 HIGH Risk | 🟡 MEDIUM Risk | 🟢 LOW Risk |
+                |-------------|---------------|------------|
+                | Skin Cancer | Actinic Keratosis | Acne, Benign Tumors, Bullous |
+                | | Lupus, Vasculitis | Candidiasis, Drug Eruption, Eczema |
+                | | | Infestations/Bites, Lichen, Moles |
+                | | | Psoriasis, Rosacea, Seborrheic Keratoses |
+                | | | Sun/Sunlight Damage, Tinea, Unknown/Normal |
+                | | | Vascular Tumors, Vitiligo, Warts |
 
                 ### ⚠️ Disclaimer
                 **This is a research tool and NOT a medical device.** All results require
-                verification by a qualified dermatologist. Do not use for clinical diagnosis.
+                verification by a qualified dermatologist.
                 """)
 
         gr.Markdown("""
         ---
         <div style="text-align:center; color:#666; font-size:12px;">
-        Skin Lesion Detection System | Improved YOLOv8 | Research Prototype | Not for clinical use
+        Skin Disease Classification | ConvNeXt-Tiny | Research Prototype | Not for clinical use
         </div>
         """)
 
@@ -450,40 +281,24 @@ def build_ui():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Launch Skin Lesion Detection Demo")
+    import argparse
+    parser = argparse.ArgumentParser(description="Launch Skin Disease Classification Demo")
     parser.add_argument("--port", type=int, default=7860, help="Gradio server port")
     parser.add_argument("--share", action="store_true", help="Create public link")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    # Check if any model checkpoints exist
-    available = []
-    for variant, path in MODEL_PATHS.items():
-        if os.path.exists(path):
-            available.append(variant)
-
-    if not available:
+    # Check model
+    if not os.path.exists(MODEL_PATH):
         print("=" * 60)
-        print("⚠️  NO TRAINED MODELS FOUND")
-        print("=" * 60)
-        print("The demo will start but detection won't work until you train models.")
-        print("Run: python train.py --model all")
-        print()
-        print(f"Looking for checkpoints at:")
-        for v, p in MODEL_PATHS.items():
-            print(f"  {v}: {p}  {'(NOT FOUND)' if not os.path.exists(p) else '(OK)'}")
+        print("⚠️  MODEL NOT FOUND")
+        print(f"   Expected: {MODEL_PATH}")
+        print("   Run: python train.py")
         print("=" * 60)
 
     demo = build_ui()
     demo.queue(max_size=10)
-    demo.launch(
-        server_port=args.port,
-        share=args.share,
-        debug=args.debug,
-        show_error=True,
-    )
+    demo.launch(server_port=args.port, share=args.share, show_error=True)
 
 
 if __name__ == "__main__":
-    import argparse
     main()

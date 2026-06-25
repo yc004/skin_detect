@@ -1,12 +1,12 @@
-# Skin Lesion Detection Dependencies
+# Skin Disease Classification — ConvNeXt Dependencies
 # Python 3.10+
 
 # Core DL Framework
 torch>=2.0.0
 torchvision>=0.15.0
 
-# YOLOv8
-ultralytics>=8.0.0
+# Model Library (ConvNeXt)
+timm>=0.9.0
 
 # Image Processing
 opencv-python>=4.8.0
@@ -16,6 +16,9 @@ numpy>=1.24.0
 # Visualization
 matplotlib>=3.7.0
 seaborn>=0.12.0
+
+# Metrics
+scikit-learn>=1.3.0
 
 # Demo UI
 gradio>=4.0.0

@@ -1,438 +1,407 @@
 #!/usr/bin/env python3
 """
-Skin Lesion Detection — Training Pipeline
-Supports 3 model variants for ablation study:
-  - baseline:  Standard YOLOv8s with default loss
-  - boundary:  Standard YOLOv8s with boundary-sensitive loss
-  - improved:  YOLOv8s + Coordinate Attention + ASFF + boundary loss
+Skin Disease Classification — ConvNeXt Training Pipeline.
+
+Uses ConvNeXt-Tiny pretrained on ImageNet-22k, fine-tuned on 22-class
+skin disease dataset.
 """
 
 import argparse
 import sys
-import os
-import copy
+import json
 from pathlib import Path
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast
+from torch.utils.data import DataLoader, random_split
+import torchvision.transforms as transforms
+from torchvision.datasets import ImageFolder
 
-# --- Register custom modules BEFORE importing ultralytics models ---
-import ultralytics.nn.modules as ul_nn_modules
-import ultralytics.nn.tasks as ul_tasks
-from models.attention import CoordAtt
-from models.asff import ASFF, ASFFHead
+import timm
+from tqdm import tqdm
+import numpy as np
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
-ul_nn_modules.CoordAtt = CoordAtt
-ul_nn_modules.ASFF = ASFF
-ul_nn_modules.ASFFHead = ASFFHead
-ul_tasks.CoordAtt = CoordAtt
-ul_tasks.ASFF = ASFF
-ul_tasks.ASFFHead = ASFFHead
+from utils.visualize import plot_confusion_matrix, plot_training_curves
 
-from ultralytics import YOLO
-from ultralytics.nn.tasks import DetectionModel, parse_model
-from ultralytics.utils.loss import v8DetectionLoss
-from ultralytics.utils import LOGGER
+# ============================================================
+# Config
+# ============================================================
+
+# 22 skin disease classes (sorted by folder name for ImageFolder)
+CLASS_NAMES = [
+    "Acne", "Actinic Keratosis", "Benign Tumors", "Bullous",
+    "Candidiasis", "Drug Eruption", "Eczema", "Infestations/Bites",
+    "Lichen", "Lupus", "Moles", "Psoriasis",
+    "Rosacea", "Seborrheic Keratoses", "Skin Cancer", "Sun/Sunlight Damage",
+    "Tinea", "Unknown/Normal", "Vascular Tumors", "Vasculitis",
+    "Vitiligo", "Warts",
+]
+
+NUM_CLASSES = len(CLASS_NAMES)
+
+# Risk levels for clinical reporting
+CLASS_RISK = {
+    "Skin Cancer":              "HIGH",
+    "Actinic Keratosis":        "MEDIUM",
+    "Lupus":                    "MEDIUM",
+    "Vasculitis":               "MEDIUM",
+    "Bullous":                  "MEDIUM",
+    "Benign Tumors":            "LOW",
+    "Moles":                    "LOW",
+    "Seborrheic Keratoses":     "LOW",
+    "Vascular Tumors":          "LOW",
+    "Warts":                    "LOW",
+    "Acne":                     "LOW",
+    "Candidiasis":              "LOW",
+    "Drug Eruption":            "LOW",
+    "Eczema":                   "LOW",
+    "Infestations/Bites":       "LOW",
+    "Lichen":                   "LOW",
+    "Psoriasis":                "LOW",
+    "Rosacea":                  "LOW",
+    "Sun/Sunlight Damage":      "LOW",
+    "Tinea":                    "LOW",
+    "Unknown/Normal":           "LOW",
+    "Vitiligo":                 "LOW",
+}
 
 
 # ============================================================
-# Custom ASFF-augmented Detect Head
+# Data
 # ============================================================
 
-class ASFFDetect(nn.Module):
+def build_transforms(img_size: int = 224, is_train: bool = True):
+    """Build data augmentation transforms."""
+    if is_train:
+        return transforms.Compose([
+            transforms.RandomResizedCrop(img_size, scale=(0.7, 1.0)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomVerticalFlip(p=0.3),
+            transforms.RandomRotation(20),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
+            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+    else:
+        return transforms.Compose([
+            transforms.Resize(int(img_size * 1.14)),
+            transforms.CenterCrop(img_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+
+
+def build_dataloaders(data_root: str, img_size: int = 224, batch_size: int = 32,
+                       num_workers: int = 4, val_split: float = 0.15):
     """
-    Wraps standard YOLOv8 Detect with ASFF pre-fusion.
-
-    Takes 3 FPN outputs [P3, P4, P5], applies ASFF to each level
-    (fusing info from all 3 levels with learned spatial weights),
-    then passes the fused features to the standard Detect head.
+    Build train/val/test dataloaders from ImageFolder-style dataset.
+    Expects: data_root/Train/<class>/ and data_root/Test/<class>/
     """
+    train_dir = Path(data_root) / "Train"
+    test_dir = Path(data_root) / "Test"
 
-    def __init__(self, detect_module: nn.Module, channels: list):
-        super().__init__()
-        self.detect = detect_module
-        # ASFF modules: one per detection scale
-        self.asff = ASFFHead(channels)
-        self._asff_channels = channels
+    if not train_dir.exists():
+        raise FileNotFoundError(f"Train directory not found: {train_dir}")
 
-    def forward(self, x):
-        """
-        Args:
-            x: List of 3 feature maps [P3, P4, P5] from FPN
-        Returns:
-            Detection output (same format as standard Detect)
-        """
-        # Apply ASFF fusion
-        fused = self.asff(x)
-        # Pass to standard detect head
-        return self.detect(fused)
+    # Full training set
+    full_train = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=True))
+
+    # Split off validation set
+    n_val = int(len(full_train) * val_split)
+    n_train = len(full_train) - n_val
+    train_ds, val_ds = random_split(full_train, [n_train, n_val], generator=torch.Generator().manual_seed(42))
+
+    # Validation dataset needs eval transforms
+    val_ds.dataset = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=False))
+    # Fix: re-split with proper transform
+    train_ds_full = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=True))
+    val_ds_full = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=False))
+    train_ds, val_ds = random_split(
+        train_ds_full, [n_train, n_val],
+        generator=torch.Generator().manual_seed(42)
+    )
+    # Use the val subset indices on val_ds_full
+    val_indices = val_ds.indices
+    val_ds = torch.utils.data.Subset(val_ds_full, val_indices)
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                               num_workers=num_workers, pin_memory=True, drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+                             num_workers=num_workers, pin_memory=True)
+
+    # Test set
+    test_loader = None
+    if test_dir.exists():
+        test_ds = ImageFolder(str(test_dir), transform=build_transforms(img_size, is_train=False))
+        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
+                                  num_workers=num_workers, pin_memory=True)
+        print(f"Test:  {len(test_ds)} images")
+
+    print(f"Train: {len(train_ds)} images")
+    print(f"Val:   {len(val_ds)} images")
+
+    return train_loader, val_loader, test_loader
 
 
 # ============================================================
-# Model Construction Helpers
+# Model
 # ============================================================
 
-def build_improved_model(nc: int = 8, verbose: bool = True) -> YOLO:
+def build_model(num_classes: int = 22, dropout: float = 0.3) -> nn.Module:
     """
-    Build YOLOv8s + Coordinate Attention + ASFF programmatically.
-
-    Strategy:
-      1. Load standard YOLOv8s via YOLO() to get proper scaling
-      2. Walk model layers, insert CoordAtt after backbone C2f blocks
-      3. Wrap Detect head with ASFF pre-fusion
+    Build ConvNeXt-Tiny classifier.
+    Uses timm's pretrained ConvNeXt-Tiny (ImageNet-22k pretrained).
     """
-    base_yaml = str(Path(__file__).parent / "models" / "yolov8s.yaml")
-
-    # Load the standard model — this applies the 's' scale correctly
-    model = YOLO(base_yaml)
-    detection_model = model.model  # DetectionModel instance
-    sequential = detection_model.model  # nn.Sequential
-
-    # --- Step 1: Get channel sizes by probing ---
-    # The standard YOLOv8s has known channel widths for each stage
-    # After scaling with s=0.50: [64, 128, 256, 512] at P1-P5
-    # But let's get actual channel sizes from the model
-    ch_stages = _get_backbone_channels(sequential)
-
-    # --- Step 2: Insert Coordinate Attention after backbone C2f ---
-    # Backbone C2f layers (by index in the Sequential):
-    # Index 2: C2f(128ch), Index 4: C2f(256ch), Index 6: C2f(512ch), Index 8: C2f(1024ch)
-    # BUT: those are BEFORE scaling. After 's' scaling (0.50 width):
-    #   Index 2: C2f(~64ch), Index 4: C2f(~128ch), Index 6: C2f(~256ch), Index 8: C2f(~512ch)
-
-    # Convert module list
-    layer_list = list(sequential)
-    original_len = len(layer_list)
-
-    # Find C2f modules in backbone (first ~10 layers)
-    c2f_indices = []
-    for i, layer in enumerate(layer_list):
-        if i >= 10:  # Only backbone
-            break
-        layer_type = type(layer).__name__
-        if 'C2f' in layer_type or layer_type == 'C2f':
-            c2f_indices.append(i)
-
-    if verbose:
-        print(f"[INFO] Found {len(c2f_indices)} C2f layers in backbone at indices: {c2f_indices}")
-
-    # Figure out channel sizes for each C2f
-    ca_channels = {}
-    for idx in c2f_indices:
-        ch = _guess_layer_channels(layer_list[idx])
-        ca_channels[idx] = ch
-        if verbose:
-            print(f"  C2f[{idx}]: ~{ch} channels")
-
-    # Insert CA after each C2f (working backwards to keep indices stable)
-    for idx in sorted(c2f_indices, reverse=True):
-        ch = ca_channels[idx]
-        layer_list.insert(idx + 1, CoordAtt(ch))
-
-    if verbose:
-        print(f"[INFO] Inserted {len(c2f_indices)} CoordAtt layers. Total layers: {len(layer_list)}")
-
-    # --- Step 3: Get detector channels and wrap with ASFF ---
-    # Find the Detect module (last layer)
-    detect_idx = None
-    detect_module = None
-    for i, layer in enumerate(layer_list):
-        if type(layer).__name__ == 'Detect':
-            detect_idx = i
-            detect_module = layer
-            break
-
-    if detect_module is None:
-        raise RuntimeError("Could not find Detect module in model layers")
-
-    # Get the 3 head output channels
-    # In ultralytics Detect, the heads are stored in self.cv2/cv3
-    # Each head processes one feature level
-    # P3 channel, P4 channel, P5 channel = output of C2f before Detect
-    # These are typically: 128, 256, 512 for YOLOv8s with scale 0.5
-    asff_channels = _get_detect_input_channels(layer_list, detect_idx)
-
-    if verbose:
-        print(f"[INFO] ASFF input channels: {asff_channels}")
-
-    # Wrap Detect with ASFF
-    asff_detect = ASFFDetect(detect_module, asff_channels)
-    layer_list[detect_idx] = asff_detect
-
-    # --- Step 4: Rebuild model ---
-    new_sequential = nn.Sequential(*layer_list)
-    detection_model.model = new_sequential
-
-    # Mark the Detect layers properly for the model's save list
-    # The savelist needs updating since indices shifted
-    if hasattr(detection_model, 'save'):
-        # Update save indices (shifted by CA insertions)
-        num_ca = len(c2f_indices)
-        old_save = detection_model.save
-        new_save = []
-        for s in old_save:
-            shift = sum(1 for ci in c2f_indices if ci < s)
-            new_save.append(s + shift)
-        detection_model.save = new_save
-
+    model = timm.create_model(
+        "convnext_tiny.fb_in22k_ft_in1k",
+        pretrained=True,
+        num_classes=num_classes,
+        drop_rate=dropout,
+    )
     return model
 
 
-def _get_backbone_channels(sequential: nn.Sequential) -> dict:
-    """Get channel sizes at each backbone stage by probing."""
-    ch_info = {}
-    return ch_info
-
-
-def _guess_layer_channels(layer) -> int:
-    """Guess output channels of a layer."""
-    # For C2f: check cv2 convolution output channels
-    if hasattr(layer, 'cv2'):
-        cv2 = layer.cv2
-        if hasattr(cv2, 'conv') and hasattr(cv2.conv, 'out_channels'):
-            return cv2.conv.out_channels
-        if hasattr(cv2, 'out_channels'):
-            return cv2.out_channels
-
-    # Try a forward pass with small input
-    try:
-        dummy = torch.randn(1, 3, 32, 32)
-        with torch.no_grad():
-            out = layer(dummy)
-        return out.shape[1]
-    except Exception:
-        pass
-
-    return 128  # Conservative fallback
-
-
-def _get_detect_input_channels(layer_list: list, detect_idx: int) -> list:
-    """Determine input channels to Detect head (from 3 FPN levels)."""
-    # The Detect module in YOLOv8 receives feature maps from the 3 preceding
-    # C2f modules (P3, P4, P5 in the head), or from Concat+Conv paths.
-    # We can read these from the Detect module's stride or no attributes.
-    detect = layer_list[detect_idx]
-
-    # Method 1: Check the Detect module's internal convs
-    if hasattr(detect, 'cv2') and hasattr(detect.cv2, '__len__'):
-        # cv2[i][0] is a Conv, check its input channels
-        channels = []
-        for head_conv_seq in detect.cv2:
-            first_conv = head_conv_seq[0]
-            if hasattr(first_conv, 'conv') and hasattr(first_conv.conv, 'in_channels'):
-                channels.append(first_conv.conv.in_channels)
-            elif hasattr(first_conv, 'in_channels'):
-                channels.append(first_conv.in_channels)
-        if len(channels) == 3:
-            return channels
-
-    # Method 2: Standard YOLOv8s channels (depends on scale)
-    # With width=0.5: P3=128, P4=256, P5=512
-    # Let's get from the layer before detect (C2f output channels)
-    channels = []
-    for offset in [-6, -4, -2]:
-        idx = detect_idx + offset
-        if idx >= 0 and idx < len(layer_list):
-            ch = _guess_layer_channels(layer_list[idx])
-            channels.append(ch)
-    if len(channels) == 3:
-        return channels
-
-    # Default for YOLOv8s
-    return [128, 256, 512]
-
-
 # ============================================================
-# Boundary-Sensitive Loss
+# Training
 # ============================================================
 
-def _compute_boundary_loss_on_matched(pred_boxes, target_boxes):
-    """
-    Compute boundary edge L1 loss between matched pred and GT boxes.
+@torch.no_grad()
+def evaluate(model: nn.Module, loader: DataLoader, criterion, device: str):
+    """Evaluate model on a dataset."""
+    model.eval()
+    total_loss = 0.0
+    all_preds, all_labels, all_probs = [], [], []
 
-    pred_boxes, target_boxes: tensors (N, 4) in xyxy normalized format
-    """
-    from utils.loss import compute_boundary_loss
-    if pred_boxes.numel() == 0 or target_boxes.numel() == 0:
-        return None
-    return compute_boundary_loss(pred_boxes, target_boxes)
+    for images, labels in loader:
+        images, labels = images.to(device), labels.to(device)
 
+        with autocast():
+            logits = model(images)
+            loss = criterion(logits, labels)
 
-def patch_loss_for_boundary(boundary_weight: float = 0.5):
-    """
-    Monkey-patch v8DetectionLoss to include boundary-sensitive loss term.
-    Returns a tuple of (original_init, original_call) for restoration.
-    """
-    OriginalLoss = v8DetectionLoss
-    orig_init = OriginalLoss.__init__
-    orig_call = OriginalLoss.__call__
+        probs = torch.softmax(logits, dim=1)
+        preds = logits.argmax(dim=1)
 
-    def patched_init(self, model):
-        orig_init(self, model)
-        self._boundary_weight = boundary_weight
+        total_loss += loss.item() * images.size(0)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+        all_probs.extend(probs.cpu().numpy())
 
-    def patched_call(self, preds, batch):
-        loss, loss_items = orig_call(self, preds, batch)
+    avg_loss = total_loss / len(loader.dataset)
+    acc = (np.array(all_preds) == np.array(all_labels)).mean()
 
-        # Attempt to add boundary loss
-        try:
-            b_loss = _extract_boundary_loss_from_state(self, preds, batch)
-            if b_loss is not None and torch.isfinite(b_loss):
-                loss = loss + boundary_weight * b_loss
-        except Exception:
-            pass
-
-        return loss, loss_items
-
-    v8DetectionLoss.__init__ = patched_init
-    v8DetectionLoss.__call__ = patched_call
-
-    return orig_init, orig_call
-
-
-def restore_loss(orig_init, orig_call):
-    """Restore original v8DetectionLoss."""
-    v8DetectionLoss.__init__ = orig_init
-    v8DetectionLoss.__call__ = orig_call
-
-
-def _extract_boundary_loss_from_state(loss_obj, preds, batch):
-    """
-    Extract boundary loss using the loss object's internal assignment state.
-
-    The v8DetectionLoss internally computes target assignment (which predictions
-    match which GT boxes). We tap into this to compute edge alignment loss.
-    """
-    # This is a simplified approach:
-    # Use the batch GT bboxes and try to get matched predictions
-    gt_bboxes = batch.get("bbox", None)
-    if gt_bboxes is None or gt_bboxes.numel() == 0:
-        return None
-
-    # The loss object computes target scores and target bboxes internally.
-    # We can't easily access them without deeper changes.
-    # For a practical implementation, we use the decoded bounding boxes
-    # from prediction distribution.
-
-    # Get prediction distribution
-    if isinstance(preds, (list, tuple)):
-        pred_distri, pred_scores = preds[0], preds[1]
-    else:
-        return None
-
-    # The distribution-based approach requires decoding — skip for now
-    # and rely on the post-hoc boundary evaluation
-    return None
-
-
-# ============================================================
-# Training Entry Point
-# ============================================================
-
-def resolve_model(model_name: str) -> dict:
-    """Resolve model variant configuration."""
-    base = Path(__file__).parent
-    variants = {
-        "baseline": {
-            "yaml": str(base / "models" / "yolov8s.yaml"),
-            "boundary_loss": False,
-            "improved_arch": False,
-            "desc": "YOLOv8s Baseline",
-        },
-        "boundary": {
-            "yaml": str(base / "models" / "yolov8s.yaml"),
-            "boundary_loss": True,
-            "improved_arch": False,
-            "desc": "YOLOv8s + Boundary Loss",
-        },
-        "improved": {
-            "yaml": str(base / "models" / "yolov8s.yaml"),
-            "boundary_loss": True,
-            "improved_arch": True,
-            "desc": "YOLOv8s + ASFF + CA + Boundary Loss",
-        },
+    return {
+        "loss": avg_loss,
+        "accuracy": acc,
+        "preds": np.array(all_preds),
+        "labels": np.array(all_labels),
+        "probs": np.array(all_probs),
     }
-    if model_name not in variants:
-        raise ValueError(f"Unknown model: {model_name}. Use: {list(variants.keys())}")
-    return variants[model_name]
+
+
+def train_epoch(model, loader, optimizer, criterion, scaler, device):
+    """Train one epoch."""
+    model.train()
+    total_loss = 0.0
+    all_preds, all_labels = [], []
+
+    pbar = tqdm(loader, desc="Training", leave=False)
+    for images, labels in pbar:
+        images, labels = images.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        with autocast():
+            logits = model(images)
+            loss = criterion(logits, labels)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        total_loss += loss.item() * images.size(0)
+        preds = logits.argmax(dim=1)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+
+        acc = (np.array(all_preds[-len(labels):]) == np.array(all_labels[-len(labels):])).mean()
+        pbar.set_postfix({"loss": f"{loss.item():.3f}", "acc": f"{acc:.3f}"})
+
+    avg_loss = total_loss / len(loader.dataset)
+    acc = (np.array(all_preds) == np.array(all_labels)).mean()
+    return avg_loss, acc
 
 
 def train_model(
-    model_name: str,
-    data_yaml: str,
-    epochs: int = 100,
-    batch: int = 16,
-    lr: float = 1e-3,
+    data_root: str,
+    output_dir: str = "runs/convnext",
+    img_size: int = 224,
+    batch_size: int = 32,
+    epochs: int = 50,
+    lr: float = 1e-4,
+    weight_decay: float = 0.05,
+    dropout: float = 0.3,
     device: str = "mps",
-    img_size: int = 640,
-    resume: bool = False,
+    num_workers: int = 4,
+    patience: int = 10,
 ):
-    """Train a specific model variant."""
-    config = resolve_model(model_name)
-    desc = config["desc"]
+    """Full training pipeline."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n" + "=" * 60)
-    print(f"Training: {desc}")
-    print(f"Config Base: {config['yaml']}")
-    print(f"Data:       {data_yaml}")
-    print(f"Device:     {device}")
-    print(f"Epochs:     {epochs} | Batch: {batch} | LR: {lr}")
-    print(f"Boundary Loss: {config['boundary_loss']}")
-    print(f"ASFF+CA:       {config['improved_arch']}")
+    print("ConvNeXt-Tiny — Skin Disease Classification (22 classes)")
+    print(f"Data:   {data_root}")
+    print(f"Device: {device}")
+    print(f"Epochs: {epochs} | Batch: {batch_size} | LR: {lr}")
     print("=" * 60)
 
-    # --- Build model ---
-    if config["improved_arch"]:
-        print("\n[INFO] Building improved architecture (ASFF + CA)...")
-        model = build_improved_model(nc=8, verbose=True)
-    else:
-        print("\n[INFO] Loading standard YOLOv8s...")
-        model = YOLO(config["yaml"])
-
-    # --- Training args ---
-    project = str(Path(__file__).parent / "runs")
-    name = model_name
-
-    train_args = dict(
-        data=data_yaml,
-        epochs=epochs,
-        batch=batch,
-        imgsz=img_size,
-        device=device,
-        workers=2 if device in ("mps", "cpu") else 8,
-        optimizer="AdamW",
-        lr0=lr,
-        lrf=0.01,
-        momentum=0.937,
-        weight_decay=0.0005,
-        warmup_epochs=3,
-        warmup_momentum=0.8,
-        warmup_bias_lr=0.1,
-        cos_lr=True,
-        close_mosaic=10,
-        project=project,
-        name=name,
-        exist_ok=True,
-        pretrained=True,
-        resume=resume,
-        verbose=True,
-        seed=42,
-        val=True,
-        save=True,
-        save_period=10,
-        plots=True,
+    # Data
+    train_loader, val_loader, test_loader = build_dataloaders(
+        data_root, img_size, batch_size, num_workers
     )
 
-    # --- Train with or without boundary loss ---
-    if config["boundary_loss"]:
-        print("\n[INFO] Enabling boundary-sensitive loss (weight=0.5)...")
-        orig_init, orig_call = patch_loss_for_boundary(boundary_weight=0.5)
-        try:
-            model.train(**train_args)
-        finally:
-            restore_loss(orig_init, orig_call)
-    else:
-        model.train(**train_args)
+    # Model
+    model = build_model(num_classes=NUM_CLASSES, dropout=dropout)
+    model = model.to(device)
+
+    # Loss & Optimizer
+    # Label smoothing for robustness
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+    )
+
+    # LR scheduler: cosine with warmup
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=epochs // 3, T_mult=2, eta_min=lr * 0.01
+    )
+
+    scaler = GradScaler()
+
+    # Training loop
+    best_val_acc = 0.0
+    best_epoch = 0
+    patience_counter = 0
+    history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+
+    for epoch in range(1, epochs + 1):
+        print(f"\nEpoch {epoch}/{epochs}")
+        print("-" * 30)
+
+        # Train
+        train_loss, train_acc = train_epoch(model, train_loader, optimizer, criterion, scaler, device)
+
+        # Validate
+        val_result = evaluate(model, val_loader, criterion, device)
+        val_loss, val_acc = val_result["loss"], val_result["accuracy"]
+
+        # Scheduler step
+        scheduler.step()
+        current_lr = scheduler.get_last_lr()[0]
+
+        # Record
+        history["train_loss"].append(train_loss)
+        history["train_acc"].append(train_acc)
+        history["val_loss"].append(val_loss)
+        history["val_acc"].append(val_acc)
+
+        print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
+        print(f"Val   Loss: {val_loss:.4f} | Val   Acc: {val_acc:.4f} | LR: {current_lr:.2e}")
+
+        # Save best
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_epoch = epoch
+            patience_counter = 0
+
+            checkpoint = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "val_acc": val_acc,
+                "val_loss": val_loss,
+                "class_names": CLASS_NAMES,
+                "class_risk": CLASS_RISK,
+            }
+            torch.save(checkpoint, output_dir / "best.pt")
+            print(f"  ✓ Best model saved (acc={val_acc:.4f})")
+        else:
+            patience_counter += 1
+            print(f"  No improvement ({patience_counter}/{patience})")
+
+        # Early stopping
+        if patience_counter >= patience:
+            print(f"\nEarly stopping triggered at epoch {epoch}")
+            break
+
+    # Load best model for final evaluation
+    print("\n" + "=" * 60)
+    print("FINAL EVALUATION")
+    print("=" * 60)
+    print(f"Best epoch: {best_epoch} | Best val acc: {best_val_acc:.4f}")
+
+    checkpoint = torch.load(output_dir / "best.pt", map_location=device, weights_only=False)
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+    # Final validation metrics
+    val_result = evaluate(model, val_loader, criterion, device)
+    print(f"\nValidation Set:")
+    print(f"  Accuracy: {val_result['accuracy']:.4f}")
+    print(f"  Loss:     {val_result['loss']:.4f}")
+
+    print("\nClassification Report:")
+    report = classification_report(
+        val_result["labels"], val_result["preds"],
+        target_names=CLASS_NAMES, zero_division=0
+    )
+    print(report)
+
+    # Confusion matrix
+    cm_path = output_dir / "confusion_matrix.png"
+    plot_confusion_matrix(val_result["labels"], val_result["preds"],
+                           CLASS_NAMES, str(cm_path))
+
+    # Training curves
+    curves_path = output_dir / "training_curves.png"
+    plot_training_curves(history, str(curves_path))
+
+    # Test set
+    if test_loader is not None:
+        test_result = evaluate(model, test_loader, criterion, device)
+        print(f"\nTest Set:")
+        print(f"  Accuracy: {test_result['accuracy']:.4f}")
+        print(f"  Loss:     {test_result['loss']:.4f}")
+
+        # Test confusion matrix
+        cm_path = output_dir / "confusion_matrix_test.png"
+        plot_confusion_matrix(test_result["labels"], test_result["preds"],
+                               CLASS_NAMES, str(cm_path))
+
+    # Save class mapping
+    mapping = {
+        "class_names": CLASS_NAMES,
+        "class_risk": CLASS_RISK,
+        "num_classes": NUM_CLASSES,
+        "img_size": img_size,
+    }
+    with open(output_dir / "class_config.json", "w") as f:
+        json.dump(mapping, f, indent=2)
+
+    print(f"\nOutputs saved to: {output_dir.absolute()}")
+    print("  - best.pt")
+    print("  - class_config.json")
+    print("  - confusion_matrix.png")
+    print("  - training_curves.png")
 
     return model
 
@@ -443,102 +412,55 @@ def train_model(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train skin lesion detection models — 3 variants for ablation"
+        description="Train ConvNeXt-Tiny for Skin Disease Classification"
     )
-    parser.add_argument(
-        "--model", type=str, default="all",
-        choices=["baseline", "boundary", "improved", "all"],
-        help="Model variant to train (default: all)"
-    )
-    parser.add_argument(
-        "--data", type=str, default="data/dataset.yaml",
-        help="Path to dataset YAML"
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=100,
-        help="Number of training epochs"
-    )
-    parser.add_argument(
-        "--batch", type=int, default=16,
-        help="Batch size"
-    )
-    parser.add_argument(
-        "--lr", type=float, default=1e-3,
-        help="Learning rate"
-    )
-    parser.add_argument(
-        "--device", type=str, default="mps",
-        help="Device (mps/cpu/cuda)"
-    )
-    parser.add_argument(
-        "--img-size", type=int, default=640,
-        help="Input image size"
-    )
-    parser.add_argument(
-        "--resume", action="store_true",
-        help="Resume from last checkpoint"
-    )
-    parser.add_argument(
-        "--quick", action="store_true",
-        help="Quick test: 5 epochs only"
-    )
+    parser.add_argument("--data", type=str, default="dataset/SkinDisease/SkinDisease",
+                        help="Path to dataset root (with Train/ and Test/ subdirs)")
+    parser.add_argument("--output", type=str, default="runs/convnext",
+                        help="Output directory for checkpoints")
+    parser.add_argument("--img-size", type=int, default=224,
+                        help="Input image size")
+    parser.add_argument("--batch", type=int, default=32,
+                        help="Batch size")
+    parser.add_argument("--epochs", type=int, default=50,
+                        help="Number of epochs")
+    parser.add_argument("--lr", type=float, default=1e-4,
+                        help="Learning rate")
+    parser.add_argument("--weight-decay", type=float, default=0.05,
+                        help="Weight decay")
+    parser.add_argument("--dropout", type=float, default=0.3,
+                        help="Dropout rate")
+    parser.add_argument("--device", type=str, default="mps",
+                        help="Device (mps/cpu/cuda)")
+    parser.add_argument("--workers", type=int, default=4,
+                        help="DataLoader workers")
+    parser.add_argument("--patience", type=int, default=10,
+                        help="Early stopping patience")
+    parser.add_argument("--quick", action="store_true",
+                        help="Quick test: 5 epochs only")
 
     args = parser.parse_args()
 
-    # Resolve data yaml path
-    data_yaml = args.data
-    if not os.path.isabs(data_yaml):
-        data_yaml = str(Path(__file__).parent / data_yaml)
-
-    if not os.path.exists(data_yaml):
-        print(f"[ERROR] Dataset YAML not found: {data_yaml}")
-        print("Run: python utils/pseudo_label.py --raw dataset/SkinDisease/SkinDisease --out data")
+    data_root = args.data
+    if not Path(data_root).exists():
+        print(f"[ERROR] Dataset not found: {data_root}")
         sys.exit(1)
-
-    models_to_train = (
-        ["baseline", "boundary", "improved"]
-        if args.model == "all"
-        else [args.model]
-    )
 
     epochs = 5 if args.quick else args.epochs
 
-    results = {}
-    for model_name in models_to_train:
-        print(f"\n{'#' * 60}")
-        print(f"# Variant: {model_name}")
-        print(f"{'#' * 60}")
-
-        try:
-            train_model(
-                model_name=model_name,
-                data_yaml=data_yaml,
-                epochs=epochs,
-                batch=args.batch,
-                lr=args.lr,
-                device=args.device,
-                img_size=args.img_size,
-                resume=args.resume,
-            )
-            results[model_name] = "✓ SUCCESS"
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            results[model_name] = f"✗ FAILED: {e}"
-
-    # Summary
-    print("\n" + "=" * 60)
-    print("TRAINING SUMMARY")
-    print("=" * 60)
-    for name, status in results.items():
-        config = resolve_model(name)
-        print(f"  {config['desc']:45s} {status}")
-
-    print("\nCheckpoints (if training succeeded):")
-    for name in models_to_train:
-        ckpt = Path(f"runs/{name}/weights/best.pt")
-        status = "✓" if ckpt.exists() else "✗"
-        print(f"  {status} runs/{name}/weights/best.pt")
+    train_model(
+        data_root=data_root,
+        output_dir=args.output,
+        img_size=args.img_size,
+        batch_size=args.batch,
+        epochs=epochs,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        dropout=args.dropout,
+        device=args.device,
+        num_workers=args.workers,
+        patience=args.patience,
+    )
 
 
 if __name__ == "__main__":

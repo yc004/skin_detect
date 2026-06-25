@@ -1,2 +1,1 @@
-from .attention import CoordAtt
-from .asff import ASFF, ASFFHead
+# Skin Disease Classification — ConvNeXt model package
