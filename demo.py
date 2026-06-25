@@ -459,19 +459,19 @@ manager = ModelManager()
 # Inference
 # ============================================================
 
-def classify(image, model_path, show_cam, top_k):
-    """Generator: yields (annotated, report_html, cam_image, model_info) progressively."""
+def classify(image, model_path, show_cam, top_k, chat_state):
+    """Generator: yields (annotated, report_html, cam_image, model_info, chat_state, chatbot)."""
     info_html = _model_info_html(model_path)
     empty = _empty_report()
 
     if image is None:
-        yield None, empty, None, info_html
+        yield None, empty, None, info_html, {}, []
         return
 
     try:
         model, class_names, class_names_zh, class_risk, img_size, transform, info = manager.load(model_path)
     except Exception as e:
-        yield image, f"<p style='color:red'>Failed to load: {e}</p>", None, info_html
+        yield image, f"<p style='color:red'>Failed to load: {e}</p>", None, info_html, {}, []
         return
 
     # --- Phase 1: Classification ---
@@ -500,14 +500,22 @@ def classify(image, model_path, show_cam, top_k):
     if show_cam:
         cam_image = draw_gradcam(model, image, class_names, transform, manager.device)
 
+    # Build context for chat
+    top = predictions[0]
+    ctx = {
+        "predictions": predictions,
+        "top_en": top["class"],
+        "top_zh": class_names_zh.get(top["class"], top["class"]),
+        "top_conf": top["confidence"],
+        "top_risk": top["risk"],
+        "model_info": info,
+    }
+
     # --- Phase 2: Stream LLM report ---
     if llm_client is not None:
-        top = predictions[0]
-        # Yield classification result + "loading" indicator first
         loading_html = _build_report(predictions, info, "⏳ 正在生成AI建议...")
-        yield annotated, loading_html, cam_image, info_html
+        yield annotated, loading_html, cam_image, info_html, ctx, []
 
-        # Stream tokens
         accumulated = ""
         for token in llm_client.generate_report_stream(
             top["class"], class_names_zh.get(top["class"], top["class"]),
@@ -515,11 +523,80 @@ def classify(image, model_path, show_cam, top_k):
         ):
             accumulated += token
             stream_html = _build_report(predictions, info, accumulated)
-            yield annotated, stream_html, cam_image, info_html
+            yield annotated, stream_html, cam_image, info_html, ctx, []
     else:
         report_html = _build_report(predictions, info, None)
-        yield annotated, report_html, cam_image, info_html
+        yield annotated, report_html, cam_image, info_html, ctx, []
 
+
+# ============================================================
+# Chat
+# ============================================================
+
+def chat(message: str, chat_history: list, ctx: dict):
+    """Streaming chat: user asks questions about the classified disease."""
+    if not ctx or not llm_client:
+        chat_history.append({"role": "user", "content": message})
+        chat_history.append({"role": "assistant", "content": "请先上传图像进行分析。"})
+        yield chat_history
+        return
+
+    top_en = ctx["top_en"]
+    top_zh = ctx["top_zh"]
+    top_conf = ctx["top_conf"]
+    top_risk = ctx["top_risk"]
+
+    kb_entry = DISEASE_KB.get(top_en, {})
+    kb_context = ""
+    if kb_entry:
+        kb_context = f"{kb_entry['overview']} 症状: {kb_entry['symptoms']} 治疗: {kb_entry['treatment']}"
+
+    system_msg = f"""你是皮肤科AI助手。用户上传的图像被分类为: {top_en}（{top_zh}），置信度{top_conf:.1%}，风险等级{top_risk}。
+{kb_context}
+请基于以上分类结果回答用户问题。使用中文，回答简洁专业。如问题超出皮肤科范围，请礼貌说明。"""
+
+    messages = [{"role": "system", "content": system_msg}]
+    for h in chat_history[-6:]:
+        role = h.get("role", "user")
+        content = h.get("content", "")
+        if role in ("user", "assistant"):
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": message})
+
+    try:
+        import urllib.request
+        data = json.dumps({
+            "model": llm_client.model,
+            "messages": messages,
+            "temperature": 0.5, "max_tokens": 500, "stream": True,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{llm_client.api_base}/chat/completions",
+            data=data,
+            headers={"Authorization": f"Bearer {llm_client.api_key}", "Content-Type": "application/json"},
+        )
+        resp = urllib.request.urlopen(req, timeout=60)
+
+        chat_history.append({"role": "user", "content": message})
+        chat_history.append({"role": "assistant", "content": ""})
+        yield chat_history
+
+        for line in resp:
+            line = line.decode("utf-8").strip()
+            if line.startswith("data: ") and line != "data: [DONE]":
+                try:
+                    chunk = json.loads(line[6:])
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        chat_history[-1]["content"] += content
+                        yield chat_history
+                except json.JSONDecodeError:
+                    continue
+    except Exception as e:
+        chat_history.append({"role": "user", "content": message})
+        chat_history.append({"role": "assistant", "content": f"[AI调用失败: {e}]"})
+        yield chat_history
 
 # ============================================================
 # HTML Reports
@@ -681,13 +758,29 @@ def build_ui(models: list):
             # ── Right Column: Report ──
             with gr.Column(scale=2, min_width=280, elem_id="col-report"):
                 report_html = gr.HTML(value=_empty_report())
+                # Chat state and UI
+                chat_state = gr.State({})
+                chatbot = gr.Chatbot(label="💬 AI 对话咨询", height=260, type="messages")
+                chat_input = gr.Textbox(
+                    placeholder="输入问题... 如: 这个病严重吗？怎么治疗？会传染吗？",
+                    label="咨询AI助手", scale=4,
+                )
+                chat_btn = gr.Button("发送", variant="secondary", scale=1)
 
-        # Events: auto-trigger on upload + manual button
-        classify_inputs = [input_image, model_dropdown, cam_checkbox, top_k_slider]
-        classify_outputs = [output_image, report_html, cam_output, model_info]
+        # --- Events ---
+        classify_inputs = [input_image, model_dropdown, cam_checkbox, top_k_slider, chat_state]
+        classify_outputs = [output_image, report_html, cam_output, model_info, chat_state, chatbot]
 
         classify_btn.click(fn=classify, inputs=classify_inputs, outputs=classify_outputs)
         input_image.change(fn=classify, inputs=classify_inputs, outputs=classify_outputs)
+
+        # Chat events
+        chat_btn.click(
+            fn=chat, inputs=[chat_input, chatbot, chat_state], outputs=[chatbot]
+        ).then(lambda: "", outputs=[chat_input])
+        chat_input.submit(
+            fn=chat, inputs=[chat_input, chatbot, chat_state], outputs=[chatbot]
+        ).then(lambda: "", outputs=[chat_input])
 
         # Footer
         gr.Markdown("""
