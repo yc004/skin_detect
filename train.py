@@ -2,8 +2,21 @@
 """
 Skin Disease Classification — ConvNeXt Training Pipeline.
 
-Uses ConvNeXt-Tiny pretrained on ImageNet-22k, fine-tuned on 22-class
-skin disease dataset.
+Supports ablation study across multiple dimensions:
+  - Backbone:   convnext_tiny (V1) | convnextv2_tiny (V2)
+  - Pooling:    avg (AdaptiveAvgPool) | gem (GeM Pooling)
+  - Multi-scale: single | multi (stage 2/3/4 fusion)
+  - EMA:        on | off
+
+Usage:
+  # Baseline V1
+  python train.py --model convnext_tiny --pooling avg
+
+  # V2 + GeM + EMA
+  python train.py --model convnextv2_tiny --pooling gem --ema
+
+  # Multi-scale fusion variant
+  python train.py --model convnext_tiny --multi-scale
 """
 
 import argparse
@@ -22,15 +35,15 @@ from torchvision.datasets import ImageFolder
 import timm
 from tqdm import tqdm
 import numpy as np
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import classification_report
 
+from models.modules import ConvNeXtWithFeatures, ModelEMA, GeMPool
 from utils.visualize import plot_confusion_matrix, plot_training_curves
 
 # ============================================================
 # Config
 # ============================================================
 
-# 22 skin disease classes (sorted by folder name for ImageFolder)
 CLASS_NAMES = [
     "Acne", "Actinic Keratosis", "Benign Tumors", "Bullous",
     "Candidiasis", "Drug Eruption", "Eczema", "Infestations/Bites",
@@ -42,30 +55,41 @@ CLASS_NAMES = [
 
 NUM_CLASSES = len(CLASS_NAMES)
 
-# Risk levels for clinical reporting
 CLASS_RISK = {
-    "Skin Cancer":              "HIGH",
-    "Actinic Keratosis":        "MEDIUM",
-    "Lupus":                    "MEDIUM",
-    "Vasculitis":               "MEDIUM",
-    "Bullous":                  "MEDIUM",
-    "Benign Tumors":            "LOW",
-    "Moles":                    "LOW",
-    "Seborrheic Keratoses":     "LOW",
-    "Vascular Tumors":          "LOW",
-    "Warts":                    "LOW",
-    "Acne":                     "LOW",
-    "Candidiasis":              "LOW",
-    "Drug Eruption":            "LOW",
-    "Eczema":                   "LOW",
-    "Infestations/Bites":       "LOW",
-    "Lichen":                   "LOW",
-    "Psoriasis":                "LOW",
-    "Rosacea":                  "LOW",
-    "Sun/Sunlight Damage":      "LOW",
-    "Tinea":                    "LOW",
-    "Unknown/Normal":           "LOW",
-    "Vitiligo":                 "LOW",
+    "Skin Cancer": "HIGH", "Actinic Keratosis": "MEDIUM",
+    "Lupus": "MEDIUM", "Vasculitis": "MEDIUM", "Bullous": "MEDIUM",
+    "Benign Tumors": "LOW", "Moles": "LOW", "Seborrheic Keratoses": "LOW",
+    "Vascular Tumors": "LOW", "Warts": "LOW", "Acne": "LOW",
+    "Candidiasis": "LOW", "Drug Eruption": "LOW", "Eczema": "LOW",
+    "Infestations/Bites": "LOW", "Lichen": "LOW", "Psoriasis": "LOW",
+    "Rosacea": "LOW", "Sun/Sunlight Damage": "LOW", "Tinea": "LOW",
+    "Unknown/Normal": "LOW", "Vitiligo": "LOW",
+}
+
+
+# ============================================================
+# Model Registry
+# ============================================================
+
+MODEL_CONFIGS = {
+    "convnext_tiny": {
+        "timm_name": "convnext_tiny.fb_in22k_ft_in1k",
+        "desc": "ConvNeXt-Tiny (V1)",
+        "default_img_size": 224,
+        "channels": [192, 384, 768],
+    },
+    "convnextv2_tiny": {
+        "timm_name": "convnextv2_tiny.fcmae_ft_in22k_in1k",
+        "desc": "ConvNeXtV2-Tiny (GRN + FCMAE pretrained)",
+        "default_img_size": 224,
+        "channels": [192, 384, 768],
+    },
+    "convnext_small": {
+        "timm_name": "convnext_small.fb_in22k_ft_in1k",
+        "desc": "ConvNeXt-Small (V1)",
+        "default_img_size": 224,
+        "channels": [192, 384, 768],
+    },
 }
 
 
@@ -85,7 +109,7 @@ def build_transforms(img_size: int = 224, is_train: bool = True):
             transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
+                                  std=[0.229, 0.224, 0.225]),
         ])
     else:
         return transforms.Compose([
@@ -93,49 +117,49 @@ def build_transforms(img_size: int = 224, is_train: bool = True):
             transforms.CenterCrop(img_size),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
+                                  std=[0.229, 0.224, 0.225]),
         ])
 
 
 def build_dataloaders(data_root: str, img_size: int = 224, batch_size: int = 32,
                        num_workers: int = 4, val_split: float = 0.15):
-    """
-    Build train/val/test dataloaders from ImageFolder-style dataset.
-    Expects: data_root/Train/<class>/ and data_root/Test/<class>/
-    """
+    """Build train/val/test dataloaders."""
     train_dir = Path(data_root) / "Train"
     test_dir = Path(data_root) / "Test"
 
     if not train_dir.exists():
         raise FileNotFoundError(f"Train directory not found: {train_dir}")
 
-    # Full training set
-    full_train = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=True))
-
-    # Split off validation set
-    n_val = int(len(full_train) * val_split)
-    n_train = len(full_train) - n_val
-    train_ds, val_ds = random_split(full_train, [n_train, n_val], generator=torch.Generator().manual_seed(42))
-
-    # Validation dataset needs eval transforms
-    val_ds.dataset = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=False))
-    # Fix: re-split with proper transform
+    # Full datasets
     train_ds_full = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=True))
     val_ds_full = ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=False))
+
+    # Split
+    n_val = int(len(train_ds_full) * val_split)
+    n_train = len(train_ds_full) - n_val
     train_ds, val_ds = random_split(
         train_ds_full, [n_train, n_val],
         generator=torch.Generator().manual_seed(42)
     )
-    # Use the val subset indices on val_ds_full
-    val_indices = val_ds.indices
-    val_ds = torch.utils.data.Subset(val_ds_full, val_indices)
+    # Re-assign val with eval transforms
+    val_indices = [train_ds_full.samples[i] for i in val_ds.indices]
+    val_ds_full.samples = val_indices
+    val_ds_full.targets = [s[1] for s in val_indices]
+    # Simpler approach: recreate
+    train_subset = torch.utils.data.Subset(
+        ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=True)),
+        train_ds.indices
+    )
+    val_subset = torch.utils.data.Subset(
+        ImageFolder(str(train_dir), transform=build_transforms(img_size, is_train=False)),
+        val_ds.indices
+    )
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True,
                                num_workers=num_workers, pin_memory=True, drop_last=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+    val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False,
                              num_workers=num_workers, pin_memory=True)
 
-    # Test set
     test_loader = None
     if test_dir.exists():
         test_ds = ImageFolder(str(test_dir), transform=build_transforms(img_size, is_train=False))
@@ -143,32 +167,63 @@ def build_dataloaders(data_root: str, img_size: int = 224, batch_size: int = 32,
                                   num_workers=num_workers, pin_memory=True)
         print(f"Test:  {len(test_ds)} images")
 
-    print(f"Train: {len(train_ds)} images")
-    print(f"Val:   {len(val_ds)} images")
+    print(f"Train: {len(train_subset)} images")
+    print(f"Val:   {len(val_subset)} images")
 
     return train_loader, val_loader, test_loader
 
 
 # ============================================================
-# Model
+# Model Building
 # ============================================================
 
-def build_model(num_classes: int = 22, dropout: float = 0.3) -> nn.Module:
+def build_model(
+    model_name: str = "convnext_tiny",
+    num_classes: int = 22,
+    pooling: str = "avg",
+    dropout: float = 0.3,
+    use_multi_scale: bool = False,
+):
     """
-    Build ConvNeXt-Tiny classifier.
-    Uses timm's pretrained ConvNeXt-Tiny (ImageNet-22k pretrained).
+    Build a ConvNeXt classifier with specified variant.
+
+    Args:
+        model_name: One of MODEL_CONFIGS keys
+        num_classes: Number of output classes
+        pooling: "avg" for AdaptiveAvgPool2d, "gem" for GeM Pooling
+        dropout: Dropout rate before classifier
+        use_multi_scale: If True, use MultiScaleHead (stage 2/3/4 fusion)
+
+    Returns:
+        model, extra_info dict
     """
-    model = timm.create_model(
-        "convnext_tiny.fb_in22k_ft_in1k",
-        pretrained=True,
+    cfg = MODEL_CONFIGS[model_name]
+
+    # Load pretrained backbone
+    backbone = timm.create_model(cfg["timm_name"], pretrained=True, num_classes=num_classes)
+
+    # Wrap with feature extraction + custom head
+    model = ConvNeXtWithFeatures(
+        backbone=backbone,
         num_classes=num_classes,
-        drop_rate=dropout,
+        dropout=dropout,
+        use_multi_scale=use_multi_scale,
+        pooling=pooling,
     )
-    return model
+
+    extra_info = {
+        "backbone": model_name,
+        "pooling": pooling,
+        "multi_scale": use_multi_scale,
+        "num_params": sum(p.numel() for p in model.parameters()),
+        "num_trainable": sum(p.numel() for p in model.parameters() if p.requires_grad),
+    }
+
+    return model, extra_info
 
 
 # ============================================================
-# Training
+# Evaluation
 # ============================================================
 
 @torch.no_grad()
@@ -205,7 +260,11 @@ def evaluate(model: nn.Module, loader: DataLoader, criterion, device: str):
     }
 
 
-def train_epoch(model, loader, optimizer, criterion, scaler, device):
+# ============================================================
+# Training
+# ============================================================
+
+def train_epoch(model, loader, optimizer, criterion, scaler, device, ema=None):
     """Train one epoch."""
     model.train()
     total_loss = 0.0
@@ -225,13 +284,17 @@ def train_epoch(model, loader, optimizer, criterion, scaler, device):
         scaler.step(optimizer)
         scaler.update()
 
+        # Update EMA after each step
+        if ema is not None:
+            ema.update(model)
+
         total_loss += loss.item() * images.size(0)
         preds = logits.argmax(dim=1)
         all_preds.extend(preds.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
 
-        acc = (np.array(all_preds[-len(labels):]) == np.array(all_labels[-len(labels):])).mean()
-        pbar.set_postfix({"loss": f"{loss.item():.3f}", "acc": f"{acc:.3f}"})
+        batch_acc = (preds == labels).float().mean()
+        pbar.set_postfix({"loss": f"{loss.item():.3f}", "acc": f"{batch_acc:.3f}"})
 
     avg_loss = total_loss / len(loader.dataset)
     acc = (np.array(all_preds) == np.array(all_labels)).mean()
@@ -241,25 +304,41 @@ def train_epoch(model, loader, optimizer, criterion, scaler, device):
 def train_model(
     data_root: str,
     output_dir: str = "runs/convnext",
+    model_name: str = "convnext_tiny",
     img_size: int = 224,
     batch_size: int = 32,
     epochs: int = 50,
     lr: float = 1e-4,
     weight_decay: float = 0.05,
     dropout: float = 0.3,
+    pooling: str = "avg",
+    use_multi_scale: bool = False,
+    use_ema: bool = False,
+    ema_decay: float = 0.999,
     device: str = "mps",
     num_workers: int = 4,
     patience: int = 10,
+    label_smoothing: float = 0.1,
 ):
-    """Full training pipeline."""
+    """Full training pipeline with ablation support."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Build experiment name from variant
+    variant_parts = [model_name]
+    if pooling == "gem":
+        variant_parts.append("GeM")
+    if use_multi_scale:
+        variant_parts.append("MS")
+    if use_ema:
+        variant_parts.append("EMA")
+    variant_name = "_".join(variant_parts)
+
     print("\n" + "=" * 60)
-    print("ConvNeXt-Tiny — Skin Disease Classification (22 classes)")
-    print(f"Data:   {data_root}")
-    print(f"Device: {device}")
-    print(f"Epochs: {epochs} | Batch: {batch_size} | LR: {lr}")
+    print(f"ConvNeXt Classification — {variant_name}")
+    print(f"Data:    {data_root}")
+    print(f"Device:  {device}")
+    print(f"Epochs:  {epochs} | Batch: {batch_size} | LR: {lr}")
     print("=" * 60)
 
     # Data
@@ -268,20 +347,27 @@ def train_model(
     )
 
     # Model
-    model = build_model(num_classes=NUM_CLASSES, dropout=dropout)
+    model, extra_info = build_model(
+        model_name=model_name,
+        num_classes=NUM_CLASSES,
+        pooling=pooling,
+        dropout=dropout,
+        use_multi_scale=use_multi_scale,
+    )
     model = model.to(device)
 
+    print(f"\nModel: {MODEL_CONFIGS[model_name]['desc']}")
+    print(f"Pooling: {pooling} | Multi-scale: {use_multi_scale} | EMA: {use_ema}")
+    print(f"Params: {extra_info['num_trainable']:,} trainable / {extra_info['num_params']:,} total")
+
+    # EMA
+    ema = ModelEMA(model, decay=ema_decay) if use_ema else None
+
     # Loss & Optimizer
-    # Label smoothing for robustness
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=lr,
-        weight_decay=weight_decay,
-    )
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    # LR scheduler: cosine with warmup
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=epochs // 3, T_mult=2, eta_min=lr * 0.01
     )
@@ -299,17 +385,22 @@ def train_model(
         print("-" * 30)
 
         # Train
-        train_loss, train_acc = train_epoch(model, train_loader, optimizer, criterion, scaler, device)
+        train_loss, train_acc = train_epoch(
+            model, train_loader, optimizer, criterion, scaler, device, ema
+        )
 
-        # Validate
+        # Validate (with EMA weights if enabled)
+        if ema is not None:
+            ema.apply_shadow(model)
         val_result = evaluate(model, val_loader, criterion, device)
+        if ema is not None:
+            ema.restore(model)
+
         val_loss, val_acc = val_result["loss"], val_result["accuracy"]
 
-        # Scheduler step
         scheduler.step()
         current_lr = scheduler.get_last_lr()[0]
 
-        # Record
         history["train_loss"].append(train_loss)
         history["train_acc"].append(train_acc)
         history["val_loss"].append(val_loss)
@@ -324,6 +415,9 @@ def train_model(
             best_epoch = epoch
             patience_counter = 0
 
+            # Save with EMA state if enabled
+            ema_state = ema.state_dict() if ema is not None else None
+
             checkpoint = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
@@ -332,29 +426,48 @@ def train_model(
                 "val_loss": val_loss,
                 "class_names": CLASS_NAMES,
                 "class_risk": CLASS_RISK,
+                "config": {
+                    "model_name": model_name,
+                    "pooling": pooling,
+                    "multi_scale": use_multi_scale,
+                    "ema": use_ema,
+                    "img_size": img_size,
+                },
             }
+            if ema_state:
+                checkpoint["ema_state"] = ema_state
+
             torch.save(checkpoint, output_dir / "best.pt")
             print(f"  ✓ Best model saved (acc={val_acc:.4f})")
         else:
             patience_counter += 1
             print(f"  No improvement ({patience_counter}/{patience})")
 
-        # Early stopping
         if patience_counter >= patience:
-            print(f"\nEarly stopping triggered at epoch {epoch}")
+            print(f"\nEarly stopping at epoch {epoch}")
             break
 
-    # Load best model for final evaluation
+    # Final evaluation
     print("\n" + "=" * 60)
     print("FINAL EVALUATION")
     print("=" * 60)
     print(f"Best epoch: {best_epoch} | Best val acc: {best_val_acc:.4f}")
 
-    checkpoint = torch.load(output_dir / "best.pt", map_location=device, weights_only=False)
+    # Load best weights (use "cpu" to avoid device serialization issues)
+    checkpoint = torch.load(output_dir / "best.pt", map_location="cpu", weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
+    model = model.to(device)
 
-    # Final validation metrics
-    val_result = evaluate(model, val_loader, criterion, device)
+    # If we used EMA, apply EMA weights for final eval
+    if ema is not None and "ema_state" in checkpoint:
+        ema.load_state_dict(checkpoint["ema_state"])
+        ema.apply_shadow(model)
+        val_result = evaluate(model, val_loader, criterion, device)
+        ema.restore(model)
+        print(f"EMA Val Acc: {val_result['accuracy']:.4f}")
+    else:
+        val_result = evaluate(model, val_loader, criterion, device)
+
     print(f"\nValidation Set:")
     print(f"  Accuracy: {val_result['accuracy']:.4f}")
     print(f"  Loss:     {val_result['loss']:.4f}")
@@ -367,12 +480,12 @@ def train_model(
     print(report)
 
     # Confusion matrix
-    cm_path = output_dir / "confusion_matrix.png"
+    cm_path = output_dir / f"confusion_matrix_{variant_name}.png"
     plot_confusion_matrix(val_result["labels"], val_result["preds"],
                            CLASS_NAMES, str(cm_path))
 
     # Training curves
-    curves_path = output_dir / "training_curves.png"
+    curves_path = output_dir / f"training_curves_{variant_name}.png"
     plot_training_curves(history, str(curves_path))
 
     # Test set
@@ -382,26 +495,28 @@ def train_model(
         print(f"  Accuracy: {test_result['accuracy']:.4f}")
         print(f"  Loss:     {test_result['loss']:.4f}")
 
-        # Test confusion matrix
-        cm_path = output_dir / "confusion_matrix_test.png"
+        cm_path = output_dir / f"confusion_matrix_test_{variant_name}.png"
         plot_confusion_matrix(test_result["labels"], test_result["preds"],
                                CLASS_NAMES, str(cm_path))
 
-    # Save class mapping
-    mapping = {
+    # Save config
+    config_data = {
+        "variant": variant_name,
         "class_names": CLASS_NAMES,
         "class_risk": CLASS_RISK,
         "num_classes": NUM_CLASSES,
         "img_size": img_size,
+        "config": checkpoint["config"],
+        "num_params": extra_info["num_trainable"],
     }
-    with open(output_dir / "class_config.json", "w") as f:
-        json.dump(mapping, f, indent=2)
+    with open(output_dir / f"config_{variant_name}.json", "w") as f:
+        json.dump(config_data, f, indent=2)
 
     print(f"\nOutputs saved to: {output_dir.absolute()}")
-    print("  - best.pt")
-    print("  - class_config.json")
-    print("  - confusion_matrix.png")
-    print("  - training_curves.png")
+    print(f"  - best.pt")
+    print(f"  - config_{variant_name}.json")
+    print(f"  - confusion_matrix_{variant_name}.png")
+    print(f"  - training_curves_{variant_name}.png")
 
     return model
 
@@ -412,54 +527,82 @@ def train_model(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train ConvNeXt-Tiny for Skin Disease Classification"
+        description="Train ConvNeXt for Skin Disease Classification (ablation-ready)"
     )
+    # Data
     parser.add_argument("--data", type=str, default="dataset/SkinDisease/SkinDisease",
-                        help="Path to dataset root (with Train/ and Test/ subdirs)")
+                        help="Dataset root path")
     parser.add_argument("--output", type=str, default="runs/convnext",
-                        help="Output directory for checkpoints")
+                        help="Output directory")
+
+    # Model ablation
+    parser.add_argument("--model", type=str, default="convnext_tiny",
+                        choices=list(MODEL_CONFIGS.keys()),
+                        help="Backbone variant (V1 or V2)")
+    parser.add_argument("--pooling", type=str, default="avg",
+                        choices=["avg", "gem"],
+                        help="Pooling method")
+    parser.add_argument("--multi-scale", action="store_true",
+                        help="Enable multi-scale feature fusion (stages 2/3/4)")
+    parser.add_argument("--ema", action="store_true",
+                        help="Enable EMA weight tracking")
+
+    # Training
     parser.add_argument("--img-size", type=int, default=224,
-                        help="Input image size")
+                        help="Input image size (224 or 384)")
     parser.add_argument("--batch", type=int, default=32,
                         help="Batch size")
     parser.add_argument("--epochs", type=int, default=50,
-                        help="Number of epochs")
+                        help="Max epochs")
     parser.add_argument("--lr", type=float, default=1e-4,
                         help="Learning rate")
     parser.add_argument("--weight-decay", type=float, default=0.05,
                         help="Weight decay")
     parser.add_argument("--dropout", type=float, default=0.3,
                         help="Dropout rate")
+    parser.add_argument("--label-smoothing", type=float, default=0.1,
+                        help="Label smoothing")
+    parser.add_argument("--ema-decay", type=float, default=0.999,
+                        help="EMA decay rate")
+    parser.add_argument("--patience", type=int, default=10,
+                        help="Early stopping patience")
+
+    # System
     parser.add_argument("--device", type=str, default="mps",
                         help="Device (mps/cpu/cuda)")
     parser.add_argument("--workers", type=int, default=4,
                         help="DataLoader workers")
-    parser.add_argument("--patience", type=int, default=10,
-                        help="Early stopping patience")
+
+    # Quick test
     parser.add_argument("--quick", action="store_true",
-                        help="Quick test: 5 epochs only")
+                        help="Quick test: 5 epochs")
 
     args = parser.parse_args()
 
-    data_root = args.data
-    if not Path(data_root).exists():
-        print(f"[ERROR] Dataset not found: {data_root}")
+    if not Path(args.data).exists():
+        print(f"[ERROR] Dataset not found: {args.data}")
         sys.exit(1)
 
     epochs = 5 if args.quick else args.epochs
 
     train_model(
-        data_root=data_root,
+        data_root=args.data,
         output_dir=args.output,
+        model_name=args.model,
         img_size=args.img_size,
         batch_size=args.batch,
         epochs=epochs,
         lr=args.lr,
         weight_decay=args.weight_decay,
         dropout=args.dropout,
+        pooling=args.pooling,
+        use_multi_scale=args.multi_scale,
+        use_ema=args.ema,
+        ema_decay=args.ema_decay,
         device=args.device,
         num_workers=args.workers,
         patience=args.patience,
+        label_smoothing=args.label_smoothing,
     )
 
 

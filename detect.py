@@ -5,7 +5,7 @@ Skin Disease Classification — Inference Script.
 Usage:
     python detect.py --image test.jpg
     python detect.py --dir data/Test/
-    python detect.py --image test.jpg --cam  # Show Grad-CAM heatmap
+    python detect.py --image test.jpg --cam
 """
 
 import argparse
@@ -21,6 +21,7 @@ import cv2
 import torchvision.transforms as transforms
 import timm
 
+from models.modules import ConvNeXtWithFeatures
 from utils.visualize import draw_classification_result, draw_gradcam
 
 
@@ -29,35 +30,57 @@ from utils.visualize import draw_classification_result, draw_gradcam
 # ============================================================
 
 def load_model(checkpoint_path: str, device: str = "mps"):
-    """Load trained ConvNeXt model with class config."""
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    """Load trained model with full config reconstruction."""
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     class_names = checkpoint.get("class_names")
     class_risk = checkpoint.get("class_risk", {})
 
     if class_names is None:
-        # Try loading from companion config file
         config_path = Path(checkpoint_path).parent / "class_config.json"
         if config_path.exists():
             with open(config_path) as f:
                 config = json.load(f)
             class_names = config["class_names"]
             class_risk = config.get("class_risk", {})
-        else:
-            raise ValueError("Class names not found in checkpoint or config file")
+
+    if class_names is None:
+        raise ValueError("Class names not found in checkpoint or config file")
 
     num_classes = len(class_names)
 
-    model = timm.create_model(
-        "convnext_tiny.fb_in22k_ft_in1k",
-        pretrained=False,
+    # Read model config from checkpoint (new) or use defaults (old)
+    model_cfg = checkpoint.get("config", {})
+    model_name = model_cfg.get("model_name", "convnext_tiny")
+    pooling = model_cfg.get("pooling", "avg")
+    use_multi_scale = model_cfg.get("multi_scale", False)
+
+    # Model name → timm name
+    MODEL_MAP = {
+        "convnext_tiny": "convnext_tiny.fb_in22k_ft_in1k",
+        "convnextv2_tiny": "convnextv2_tiny.fcmae_ft_in22k_in1k",
+        "convnext_small": "convnext_small.fb_in22k_ft_in1k",
+    }
+    timm_name = MODEL_MAP.get(model_name, "convnext_tiny.fb_in22k_ft_in1k")
+
+    # Rebuild architecture
+    backbone = timm.create_model(timm_name, pretrained=False, num_classes=num_classes)
+    model = ConvNeXtWithFeatures(
+        backbone=backbone,
         num_classes=num_classes,
+        dropout=0.3,
+        use_multi_scale=use_multi_scale,
+        pooling=pooling,
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
     model.eval()
 
-    print(f"Loaded model (epoch {checkpoint.get('epoch', '?')}, val_acc={checkpoint.get('val_acc', 0):.4f})")
+    # Apply EMA if available
+    has_ema = "ema_state" in checkpoint
+
+    print(f"Loaded: {model_name} | pooling={pooling} | multi_scale={use_multi_scale} | ema={has_ema}")
+    print(f"Epoch: {checkpoint.get('epoch', '?')} | Val Acc: {checkpoint.get('val_acc', 0):.4f}")
     print(f"Classes: {num_classes}")
 
     return model, class_names, class_risk
@@ -74,7 +97,7 @@ def get_transform(img_size: int = 224):
         transforms.CenterCrop(img_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
+                              std=[0.229, 0.224, 0.225]),
     ])
 
 
@@ -87,20 +110,16 @@ def predict(model, image_bgr: np.ndarray, class_names: list, class_risk: dict,
             transform, device: str = "mps", top_k: int = 3, use_cam: bool = False):
     """
     Run classification on a single image.
-
-    Returns: dict with top_k predictions and risk info.
     """
     h, w = image_bgr.shape[:2]
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-    # Preprocess
     tensor = transform(image_rgb).unsqueeze(0).to(device)
 
-    # Inference
     logits = model(tensor)
     probs = F.softmax(logits, dim=1)
 
-    topk_probs, topk_indices = torch.topk(probs, top_k)
+    topk_probs, topk_indices = torch.topk(probs, min(top_k, len(class_names)))
     topk_probs = topk_probs.cpu().numpy()[0]
     topk_indices = topk_indices.cpu().numpy()[0]
 
@@ -108,11 +127,7 @@ def predict(model, image_bgr: np.ndarray, class_names: list, class_risk: dict,
     for prob, idx in zip(topk_probs, topk_indices):
         name = class_names[idx]
         risk = class_risk.get(name, "LOW")
-        predictions.append({
-            "class": name,
-            "confidence": float(prob),
-            "risk": risk,
-        })
+        predictions.append({"class": name, "confidence": float(prob), "risk": risk})
 
     result = {
         "predictions": predictions,
@@ -121,7 +136,6 @@ def predict(model, image_bgr: np.ndarray, class_names: list, class_risk: dict,
         "top_risk": predictions[0]["risk"],
     }
 
-    # Grad-CAM
     cam_image = None
     if use_cam:
         cam_image = draw_gradcam(model, image_bgr, class_names, transform, device)
@@ -134,9 +148,7 @@ def predict(model, image_bgr: np.ndarray, class_names: list, class_risk: dict,
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Skin Disease Classification Inference"
-    )
+    parser = argparse.ArgumentParser(description="Skin Disease Classification Inference")
     parser.add_argument("--model", type=str, default="runs/convnext/best.pt",
                         help="Path to model checkpoint")
     parser.add_argument("--image", type=str, default=None,
@@ -144,7 +156,7 @@ def main():
     parser.add_argument("--dir", type=str, default=None,
                         help="Path to image directory")
     parser.add_argument("--output", type=str, default="results",
-                        help="Output directory for results")
+                        help="Output directory")
     parser.add_argument("--cam", action="store_true",
                         help="Generate Grad-CAM heatmap")
     parser.add_argument("--device", type=str, default="mps",
@@ -157,9 +169,12 @@ def main():
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load model
     model, class_names, class_risk = load_model(args.model, args.device)
-    transform = get_transform()
+
+    # Get img_size from checkpoint config
+    checkpoint = torch.load(args.model, map_location="cpu", weights_only=False)
+    img_size = checkpoint.get("config", {}).get("img_size", 224)
+    transform = get_transform(img_size)
 
     # Collect images
     images_to_process = []
@@ -191,17 +206,14 @@ def main():
             device=args.device, top_k=args.top_k, use_cam=args.cam,
         )
 
-        # Print results
         for i, pred in enumerate(result["predictions"]):
             risk_icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(pred["risk"], "⚪")
             marker = " →" if i == 0 else "  "
             print(f"{marker} {risk_icon} {pred['class']:<30s} {pred['confidence']:.2%}  [{pred['risk']}]")
 
-        # Alert
         if result["top_risk"] == "HIGH":
-            print(f"  ⚠️  HIGH RISK: {result['top_class']} — clinical consultation advised")
+            print(f"  ⚠️  HIGH RISK — clinical consultation advised")
 
-        # Save result
         annotated = draw_classification_result(image, result["predictions"], class_risk)
         out_path = output_dir / f"result_{img_path.stem}.jpg"
         cv2.imwrite(str(out_path), annotated)
