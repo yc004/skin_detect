@@ -37,10 +37,10 @@
   text-align: center;
   padding: 30px 60px;
 }
-.reveal h1 { font-size: 3em; font-weight: 700; margin-bottom: 16px; }
-.reveal h2 { font-size: 2.2em; font-weight: 600; color: var(--accent); margin-bottom: 20px; }
-.reveal h3 { font-size: 1.4em; color: var(--muted); font-weight: 400; margin-bottom: 10px; }
-.reveal p, .reveal li { font-size: 1.05em; line-height: 1.5; color: #ddd; }
+.reveal h1 { font-size: 2em; font-weight: 700; margin-bottom: 16px; }
+.reveal h2 { font-size: 1.5em; font-weight: 600; color: var(--accent); margin-bottom: 20px; }
+.reveal h3 { font-size: 1em; color: var(--muted); font-weight: 400; margin-bottom: 10px; }
+.reveal p, .reveal li { font-size: 0.6em; line-height: 1.5; color: #ddd; }
 .reveal ul { list-style: none; padding: 0; }
 .reveal ul li::before { content: "▸ "; color: var(--accent); }
 .reveal small { font-size: .85em; color: var(--muted); }
@@ -53,21 +53,21 @@
 .tag-b { background:#1a2a3a; color:var(--accent); }
 
 /* Tables */
-.tbl { border-collapse:collapse; margin:8px auto; font-size:1.1em; width:100%; max-width:900px; }
+.tbl { border-collapse:collapse; margin:8px auto; font-size:1.1em; width:100%; max-width:700px; }
 .tbl th { background:var(--border); padding:8px 14px; font-weight:600; color:var(--accent); text-align:center; }
 .tbl td { padding:6px 14px; border-bottom:1px solid var(--border); text-align:center; }
 .tbl .up { color:var(--green); font-weight:600; }
 .tbl .dn { color:var(--red); }
 
 /* Cards grid */
-.cards { display:flex; gap:20px; flex-wrap:wrap; justify-content:center; margin:12px 0; }
-.card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:20px 24px; width:320px; text-align:left; }
+.cards { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; margin:12px 0; }
+.card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:20px 24px; width:240px; text-align:left; }
 .card h4 { color:var(--accent); font-size:1.1em; margin:0 0 4px 0; }
 .card p { font-size:.9em; color:var(--muted); line-height:1.4; margin:0; }
 .card .icon { font-size:1.8em; margin-bottom:6px; display:block; }
 
 /* Two-column */
-.cols { display:flex; gap:40px; align-items:center; justify-content:center; }
+.cols { display:flex; gap:24px; align-items:center; justify-content:center; }
 .col { flex:1; text-align:center; }
 
 /* Big numbers */
@@ -83,8 +83,8 @@
 .formula { display:inline-block; padding:10px 30px; background:var(--card-bg); border-radius:8px; margin:10px 0; font-family:serif; font-style:italic; font-size:1.2em; }
 
 /* Image preview */
-.img-preview { max-width:600px; max-height:450px; border-radius:10px; border:2px solid var(--border); }
-.img-compare { max-width:520px; max-height:400px; border-radius:10px; object-fit:contain; }
+.img-preview { max-width:450px; max-height:450px; border-radius:10px; border:2px solid var(--border); }
+.img-compare { max-width:400px; max-height:400px; border-radius:10px; object-fit:contain; }
 
 /* Gradient text */
 .grad { background:linear-gradient(135deg, var(--accent), var(--green)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:700; }
@@ -100,7 +100,7 @@
      S1: COVER
      ============================================================ -->
 <section>
-  <h1 class="grad" style="font-size:3.2em;">基于改进 ConvNeXt 的<br>多类别皮肤疾病智能分类系统</h1>
+  <h1 class="grad" style="font-size:2.2em;">基于改进 ConvNeXt 的<br>多类别皮肤疾病智能分类系统</h1>
   <p style="margin-top:10px;font-size:1.2em;">22 类皮肤疾病 · Val Acc <span class="hl">82.20%</span> · Grad-CAM · AI 辅助诊断</p>
   <div style="margin-top:24px;">
     <span class="tag tag-b">ConvNeXt V2</span>
@@ -206,7 +206,7 @@
       </div>
       <p style="font-size:1em;margin-top:4px;">27.84M · Val Acc 79.80%</p>
     </div>
-    <div style="color:var(--accent);font-size:2em;">→</div>
+    <div style="color:var(--accent);font-size:1.5em;">→</div>
     <div class="col">
       <h3 style="color:var(--green)">改进 V2 + GeM + EMA</h3>
       <div style="background:var(--card-bg);border:2px solid var(--green);border-radius:8px;padding:12px;text-align:left;font-size:1em;line-height:2;">
@@ -287,7 +287,7 @@
   </table>
   <div style="display:flex;gap:30px;justify-content:center;margin-top:16px;">
     <div><div class="big">79.80%</div><div class="big-sub">基线 Val Acc</div></div>
-    <div style="font-size:2em;align-self:center;color:var(--accent);">→</div>
+    <div style="font-size:1.5em;align-self:center;color:var(--accent);">→</div>
     <div><div class="big" style="color:var(--accent);">82.20%</div><div class="big-sub">改进 Val Acc <span class="hl">(+2.40%)</span></div></div>
   </div>
   <aside class="notes">核心结果。所有指标全面提升，参数量仅增加0.17%。老师问"效果怎么样"翻这页。</aside>
@@ -436,7 +436,7 @@
      S19: THANK YOU
      ============================================================ -->
 <section>
-  <h1 class="grad" style="font-size:3em;">感谢聆听</h1>
+  <h1 class="grad" style="font-size:1.5em;">感谢聆听</h1>
   <p style="font-size:1em;margin-top:12px;">请各位老师批评指正</p>
   <div style="margin-top:20px;padding:12px 20px;background:var(--card-bg);border-radius:8px;display:inline-block;font-size:1.25em;">
     GitHub: <b>https://github.com/yc004/skin_detect</b>
