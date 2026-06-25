@@ -589,67 +589,69 @@ def build_ui(models: list):
     with gr.Blocks(
         theme=theme,
         title="皮肤疾病智能分类系统",
-        css="""footer { visibility: hidden; } .gradio-container { max-width: 1300px !important; }""",
+        css="""
+        footer { visibility: hidden; }
+        .gradio-container { max-width: 1400px !important; }
+        #col-settings { background: #1e1e2e; border-radius: 12px; padding: 16px; }
+        #col-report { background: #1e1e2e; border-radius: 12px; padding: 4px; max-height: 720px; overflow-y: auto; }
+        """,
     ) as demo:
         gr.Markdown("""
-        # 🩺 皮肤疾病智能辅助分类系统
-        ### 基于改进 ConvNeXt 的 22 类皮肤疾病诊断 | 内置疾病知识库 | 接入大模型建议
+        <div style="text-align:center; margin-bottom:0;">
+            <h1 style="margin:0 0 4px 0;">🩺 皮肤疾病智能辅助分类系统</h1>
+            <p style="color:#888; font-size:14px; margin:0;">ConvNeXt · 22类皮肤病 · {'🤖 AI建议已启用' if llm_client else '💡 配置API key以启用AI建议'}</p>
+        </div>
         """)
 
-        with gr.Row():
-            with gr.Column(scale=1, min_width=200):
-                gr.Markdown("### ⚙️ 设置")
+        with gr.Row(equal_height=True):
+            # ── Left Column: Settings ──
+            with gr.Column(scale=1, min_width=180, elem_id="col-settings"):
+                gr.Markdown("#### ⚙️ 设置")
                 model_dropdown = gr.Dropdown(
                     choices=model_choices, value=default_model,
                     label="模型选择", interactive=True,
                 )
-                top_k_slider = gr.Slider(1, 5, 3, step=1, label="Top-K")
-                cam_checkbox = gr.Checkbox(label="Grad-CAM 热力图", value=False)
-                llm_status = "🤖 AI建议: 已启用" if llm_client else "💡 AI建议: 使用 --api-key 启用"
-                gr.Markdown(f"*{llm_status}*")
+                top_k_slider = gr.Slider(
+                    1, 5, 3, step=1, label="显示 Top-K",
+                )
+                cam_checkbox = gr.Checkbox(
+                    label="Grad-CAM 热力图", value=False,
+                )
+                gr.Markdown("---")
                 model_info = gr.HTML(value=_model_info_html(default_model))
 
-            with gr.Column(scale=2):
-                with gr.Tabs():
-                    with gr.TabItem("📸 单图分析"):
-                        with gr.Row():
-                            with gr.Column(scale=3):
-                                input_image = gr.Image(label="上传皮肤图像", type="numpy", height=420)
-                                classify_btn = gr.Button("🔬 开始分析", variant="primary", size="lg")
-                            with gr.Column(scale=2):
-                                output_image = gr.Image(label="分析结果", type="numpy", height=300)
-                                report_html = gr.HTML(value=_empty_report())
-                        with gr.Row():
-                            cam_output = gr.Image(label="Grad-CAM", type="numpy", height=250)
+            # ── Center Column: Image I/O ──
+            with gr.Column(scale=3):
+                with gr.Row():
+                    input_image = gr.Image(
+                        label="上传皮肤图像", type="numpy", height=380,
+                        sources=["upload", "clipboard", "webcam"],
+                    )
+                    output_image = gr.Image(
+                        label="分析结果", type="numpy", height=380,
+                    )
 
-                        classify_btn.click(
-                            fn=classify,
-                            inputs=[input_image, model_dropdown, cam_checkbox, top_k_slider],
-                            outputs=[output_image, report_html, cam_output, model_info],
-                        )
+                classify_btn = gr.Button("🔬 开始分析", variant="primary", size="lg")
+                cam_output = gr.Image(
+                    label="Grad-CAM 激活热力图 (模型关注区域)", type="numpy",
+                    height=200, visible=True,
+                )
 
-                    with gr.TabItem("ℹ️ 关于"):
-                        gr.Markdown(f"""
-                        ## 关于本系统
+            # ── Right Column: Report ──
+            with gr.Column(scale=2, min_width=280, elem_id="col-report"):
+                report_html = gr.HTML(value=_empty_report())
 
-        ### 功能
-        - **22类皮肤疾病分类** — ConvNeXtV2 + GeM + EMA
-        - **内置疾病知识库** — 每种疾病的概述、症状、治疗、注意事项
-        - **大模型AI建议** — {'已启用 (模型: ' + llm_model + ')' if llm_client else '需通过 --api-key 启动'}
+        # Events
+        classify_btn.click(
+            fn=classify,
+            inputs=[input_image, model_dropdown, cam_checkbox, top_k_slider],
+            outputs=[output_image, report_html, cam_output, model_info],
+        )
 
-        ### 风险等级
-        | 🔴 HIGH | 皮肤癌 — 建议立即就医 |
-        | 🟡 MEDIUM | 光化性角化病、红斑狼疮、血管炎、大疱性皮肤病 |
-        | 🟢 LOW | 其他17种常见皮肤病 |
-
-        ### ⚠️ 免责声明
-                        **本系统为学术研究原型，非医疗器械。所有信息仅供参考，不可替代专业医疗诊断。**
-                        """)
-
+        # Footer
         gr.Markdown("""
-        ---
-        <div style="text-align:center; color:#555; font-size:10px;">
-        Skin Disease Classification | ConvNeXt | AI Research Prototype | Not for clinical use
+        <div style="text-align:center; color:#555; font-size:10px; margin-top:8px;">
+        ⚠️ 本系统为学术研究原型，非医疗器械。所有结果仅供参考，不可用于临床诊断。
         </div>
         """)
 
