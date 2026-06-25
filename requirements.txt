@@ -20,8 +20,8 @@ seaborn>=0.12.0
 # Metrics
 scikit-learn>=1.3.0
 
-# Demo UI
-gradio>=4.0.0
+# Web App
+flask>=3.0
 
 # Utilities
 tqdm>=4.65.0

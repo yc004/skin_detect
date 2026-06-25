@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>皮肤疾病智能辅助分类系统</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>🩺 皮肤疾病智能辅助分类系统</h1>
+  <p>ConvNeXt · 22类皮肤病 · {% if llm_available %}🤖 AI建议已启用{% else %}AI待配置{% endif %}</p>
+</header>
+
+<div class="main-layout">
+
+  <!-- Left Panel: Image -->
+  <section class="panel panel-image">
+    <div class="upload-area" id="uploadArea">
+      <input type="file" id="fileInput" accept="image/*" hidden>
+      <div class="upload-placeholder" id="uploadPlaceholder">
+        <div class="upload-icon">📸</div>
+        <p>拖拽或点击上传皮肤图像</p>
+        <span>支持 JPG / PNG / BMP</span>
+      </div>
+      <img id="previewImage" class="preview-hidden" alt="预览">
+      <div class="image-actions">
+        <button id="btnUpload" class="btn btn-outline">选择图片</button>
+        <button id="btnClear" class="btn btn-outline" style="display:none">清除</button>
+      </div>
+    </div>
+    <div id="resultImage" class="result-image"></div>
+  </section>
+
+  <!-- Center Panel: Classification Result -->
+  <section class="panel panel-result">
+    <div class="panel-header">🔬 分类结果</div>
+    <div id="resultPlaceholder" class="placeholder-text">上传图像以开始分析</div>
+    <div id="resultContent" style="display:none">
+      <div id="riskBanner" class="risk-banner"></div>
+      <div id="predictionBars" class="prediction-bars"></div>
+      <div id="diseaseInfo" class="disease-info"></div>
+    </div>
+    <!-- AI Report (streamed) -->
+    <div id="aiReport" class="ai-report" style="display:none">
+      <div class="ai-report-header">🤖 AI 辅助建议</div>
+      <div id="aiReportContent" class="ai-report-content"></div>
+      <div id="aiLoading" class="ai-loading" style="display:none">
+        <span class="dot-pulse"></span> 正在生成AI建议...
+      </div>
+    </div>
+  </section>
+
+  <!-- Right Panel: Chat -->
+  <section class="panel panel-chat">
+    <div class="panel-header">💬 AI 对话咨询</div>
+    <div id="chatMessages" class="chat-messages">
+      <div class="chat-placeholder">分类完成后可在此咨询AI</div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="输入问题..." disabled>
+      <button id="btnSend" class="btn btn-primary" disabled>发送</button>
+    </div>
+  </section>
+
+</div>
+
+<!-- Model info bar -->
+<footer>
+  <span>模型: {{ model_info.get('model_name', '未加载') | replace('_', ' ') | title }}</span>
+  {% if model_info.get('val_acc') %}
+  <span>| 验证准确率: {{ "%.2f" | format(model_info.val_acc * 100) }}%</span>
+  {% endif %}
+  <span>| ⚠️ 研究原型 · 不可用于临床诊断</span>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
