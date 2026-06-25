@@ -322,7 +322,11 @@ class LLMClient:
                 if line.startswith("data: ") and line != "data: [DONE]":
                     try:
                         chunk = json.loads(line[6:])
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        choice = chunk.get("choices", [{}])[0]
+                        # Skip final chunk — some APIs send full text in it
+                        if choice.get("finish_reason") is not None:
+                            continue
+                        delta = choice.get("delta", {})
                         content = delta.get("content", "")
                         if content:
                             yield content
@@ -587,7 +591,11 @@ def chat(message: str, chat_history: list, ctx: dict):
             if line.startswith("data: ") and line != "data: [DONE]":
                 try:
                     chunk = json.loads(line[6:])
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    choice = chunk.get("choices", [{}])[0]
+                    # Skip final chunk — some APIs send full text in it
+                    if choice.get("finish_reason") is not None:
+                        continue
+                    delta = choice.get("delta", {})
                     content = delta.get("content", "")
                     if content:
                         user_msg, bot_msg = chat_history[-1]
