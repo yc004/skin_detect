@@ -534,10 +534,11 @@ def classify(image, model_path, show_cam, top_k, chat_state):
 # ============================================================
 
 def chat(message: str, chat_history: list, ctx: dict):
-    """Streaming chat: user asks questions about the classified disease."""
+    """Streaming chat: user asks questions about the classified disease.
+    chat_history uses Gradio tuple format: [(user_msg, bot_msg), ...]
+    """
     if not ctx or not llm_client:
-        chat_history.append({"role": "user", "content": message})
-        chat_history.append({"role": "assistant", "content": "请先上传图像进行分析。"})
+        chat_history.append((message, "请先上传图像进行分析。"))
         yield chat_history
         return
 
@@ -553,14 +554,15 @@ def chat(message: str, chat_history: list, ctx: dict):
 
     system_msg = f"""你是皮肤科AI助手。用户上传的图像被分类为: {top_en}（{top_zh}），置信度{top_conf:.1%}，风险等级{top_risk}。
 {kb_context}
-请基于以上分类结果回答用户问题。使用中文，回答简洁专业。如问题超出皮肤科范围，请礼貌说明。"""
+基于以上结果回答用户问题。用中文，简洁专业。"""
 
+    # Build messages: convert tuple history to API format
     messages = [{"role": "system", "content": system_msg}]
-    for h in chat_history[-6:]:
-        role = h.get("role", "user")
-        content = h.get("content", "")
-        if role in ("user", "assistant"):
-            messages.append({"role": role, "content": content})
+    for user_msg, bot_msg in chat_history[-3:]:
+        if user_msg:
+            messages.append({"role": "user", "content": user_msg})
+        if bot_msg:
+            messages.append({"role": "assistant", "content": bot_msg})
     messages.append({"role": "user", "content": message})
 
     try:
@@ -577,8 +579,7 @@ def chat(message: str, chat_history: list, ctx: dict):
         )
         resp = urllib.request.urlopen(req, timeout=60)
 
-        chat_history.append({"role": "user", "content": message})
-        chat_history.append({"role": "assistant", "content": ""})
+        chat_history.append((message, ""))
         yield chat_history
 
         for line in resp:
@@ -589,13 +590,13 @@ def chat(message: str, chat_history: list, ctx: dict):
                     delta = chunk.get("choices", [{}])[0].get("delta", {})
                     content = delta.get("content", "")
                     if content:
-                        chat_history[-1]["content"] += content
+                        user_msg, bot_msg = chat_history[-1]
+                        chat_history[-1] = (user_msg, bot_msg + content)
                         yield chat_history
                 except json.JSONDecodeError:
                     continue
     except Exception as e:
-        chat_history.append({"role": "user", "content": message})
-        chat_history.append({"role": "assistant", "content": f"[AI调用失败: {e}]"})
+        chat_history.append((message, f"[AI调用失败: {e}]"))
         yield chat_history
 
 # ============================================================
@@ -694,8 +695,7 @@ def _model_info_html(model_path: str) -> str:
 # Gradio UI
 # ============================================================
 
-def build_ui(models: list):
-    theme = gr.themes.Soft(primary_hue="blue", secondary_hue="slate")
+def build_ui(models: list, theme, css: str):
 
     if models:
         model_choices = [m["path"] for m in models]
@@ -704,16 +704,7 @@ def build_ui(models: list):
         model_choices = ["runs/convnext_tiny/best.pt"]
         default_model = model_choices[0]
 
-    with gr.Blocks(
-        theme=theme,
-        title="皮肤疾病智能分类系统",
-        css="""
-        footer { visibility: hidden; }
-        .gradio-container { max-width: 1400px !important; }
-        #col-settings { background: #1e1e2e; border-radius: 12px; padding: 16px; }
-        #col-report { background: #1e1e2e; border-radius: 12px; padding: 4px; max-height: 720px; overflow-y: auto; }
-        """,
-    ) as demo:
+    with gr.Blocks(title="皮肤疾病智能分类系统") as demo:
         gr.Markdown("""
         <div style="text-align:center; margin-bottom:0;">
             <h1 style="margin:0 0 4px 0;">🩺 皮肤疾病智能辅助分类系统</h1>
@@ -760,7 +751,7 @@ def build_ui(models: list):
                 report_html = gr.HTML(value=_empty_report())
                 # Chat state and UI
                 chat_state = gr.State({})
-                chatbot = gr.Chatbot(label="💬 AI 对话咨询", height=260, type="messages")
+                chatbot = gr.Chatbot(label="💬 AI 对话咨询", height=260)
                 chat_input = gr.Textbox(
                     placeholder="输入问题... 如: 这个病严重吗？怎么治疗？会传染吗？",
                     label="咨询AI助手", scale=4,
@@ -853,9 +844,17 @@ def main():
     else:
         print(f"📦 发现 {len(models)} 个模型")
 
-    demo = build_ui(models)
+    theme = gr.themes.Soft(primary_hue="blue", secondary_hue="slate")
+    css = """
+    footer { visibility: hidden; }
+    .gradio-container { max-width: 1400px !important; }
+    #col-settings { background: #1e1e2e; border-radius: 12px; padding: 16px; }
+    #col-report { background: #1e1e2e; border-radius: 12px; padding: 4px; max-height: 720px; overflow-y: auto; }
+    """
+    demo = build_ui(models, theme, css)
     demo.queue(max_size=20)
-    demo.launch(server_port=args.port, share=args.share, show_error=True)
+    demo.launch(server_port=args.port, share=args.share, show_error=True,
+                theme=theme, css=css)
 
 
 if __name__ == "__main__":
