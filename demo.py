@@ -538,13 +538,10 @@ def classify(image, model_path, show_cam, top_k, chat_state):
 # ============================================================
 
 def chat(message: str, chat_history: list, ctx: dict):
-    """Streaming chat: user asks questions about the classified disease.
-    chat_history uses Gradio tuple format: [(user_msg, bot_msg), ...]
-    """
+    """Non-streaming chat to avoid generator conflicts with classify."""
     if not ctx or not llm_client:
         chat_history.append((message, "请先上传图像进行分析。"))
-        yield chat_history
-        return
+        return chat_history, ""
 
     top_en = ctx["top_en"]
     top_zh = ctx["top_zh"]
@@ -556,11 +553,10 @@ def chat(message: str, chat_history: list, ctx: dict):
     if kb_entry:
         kb_context = f"{kb_entry['overview']} 症状: {kb_entry['symptoms']} 治疗: {kb_entry['treatment']}"
 
-    system_msg = f"""你是皮肤科AI助手。用户上传的图像被分类为: {top_en}（{top_zh}），置信度{top_conf:.1%}，风险等级{top_risk}。
+    system_msg = f"""你是皮肤科AI助手。分类结果: {top_en}（{top_zh}），置信度{top_conf:.1%}，风险{top_risk}。
 {kb_context}
 基于以上结果回答用户问题。用中文，简洁专业。"""
 
-    # Build messages: convert tuple history to API format
     messages = [{"role": "system", "content": system_msg}]
     for user_msg, bot_msg in chat_history[-3:]:
         if user_msg:
@@ -574,7 +570,7 @@ def chat(message: str, chat_history: list, ctx: dict):
         data = json.dumps({
             "model": llm_client.model,
             "messages": messages,
-            "temperature": 0.5, "max_tokens": 500, "stream": True,
+            "temperature": 0.5, "max_tokens": 500, "stream": False,
         }).encode("utf-8")
         req = urllib.request.Request(
             f"{llm_client.api_base}/chat/completions",
@@ -582,30 +578,13 @@ def chat(message: str, chat_history: list, ctx: dict):
             headers={"Authorization": f"Bearer {llm_client.api_key}", "Content-Type": "application/json"},
         )
         resp = urllib.request.urlopen(req, timeout=60)
-
-        chat_history.append((message, ""))
-        yield chat_history
-
-        for line in resp:
-            line = line.decode("utf-8").strip()
-            if line.startswith("data: ") and line != "data: [DONE]":
-                try:
-                    chunk = json.loads(line[6:])
-                    choice = chunk.get("choices", [{}])[0]
-                    # Skip final chunk — some APIs send full text in it
-                    if choice.get("finish_reason") is not None:
-                        continue
-                    delta = choice.get("delta", {})
-                    content = delta.get("content", "")
-                    if content:
-                        user_msg, bot_msg = chat_history[-1]
-                        chat_history[-1] = (user_msg, bot_msg + content)
-                        yield chat_history
-                except json.JSONDecodeError:
-                    continue
+        result = json.loads(resp.read())
+        reply = result["choices"][0]["message"]["content"]
     except Exception as e:
-        chat_history.append((message, f"[AI调用失败: {e}]"))
-        yield chat_history
+        reply = f"[AI调用失败: {e}]"
+
+    chat_history.append((message, reply))
+    return chat_history, ""
 
 # ============================================================
 # HTML Reports
@@ -775,11 +754,11 @@ def build_ui(models: list, theme, css: str):
 
         # Chat events
         chat_btn.click(
-            fn=chat, inputs=[chat_input, chatbot, chat_state], outputs=[chatbot]
-        ).then(lambda: "", outputs=[chat_input])
+            fn=chat, inputs=[chat_input, chatbot, chat_state], outputs=[chatbot, chat_input]
+        )
         chat_input.submit(
-            fn=chat, inputs=[chat_input, chatbot, chat_state], outputs=[chatbot]
-        ).then(lambda: "", outputs=[chat_input])
+            fn=chat, inputs=[chat_input, chatbot, chat_state], outputs=[chatbot, chat_input]
+        )
 
         # Footer
         gr.Markdown("""
