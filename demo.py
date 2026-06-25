@@ -123,6 +123,7 @@ class ModelManager:
             backbone=backbone, num_classes=num_classes,
             dropout=0.3, use_multi_scale=use_multi_scale, pooling=pooling,
         )
+
         # Handle EMA state if present
         if "ema_state" in checkpoint:
             from models.modules import ModelEMA
@@ -130,7 +131,12 @@ class ModelManager:
             ema.load_state_dict(checkpoint["ema_state"])
             ema.apply_shadow(model)
 
-        model.load_state_dict(checkpoint["model_state_dict"])
+        # Remap state_dict for backward compatibility:
+        # Old checkpoints use "backbone.stem.xxx" keys, new architecture uses "stem.xxx"
+        state_dict = checkpoint["model_state_dict"]
+        if any(k.startswith("backbone.") for k in state_dict.keys()):
+            state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict)
         model = model.to(self.device)
         model.eval()
 

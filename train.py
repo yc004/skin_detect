@@ -29,7 +29,7 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.cuda.amp import GradScaler, autocast
+from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader, random_split
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
@@ -163,15 +163,15 @@ def build_dataloaders(data_root: str, img_size: int = 224, batch_size: int = 32,
     )
 
     train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True,
-                               num_workers=num_workers, pin_memory=True, drop_last=True)
+                               num_workers=num_workers, pin_memory=False, drop_last=True)
     val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False,
-                             num_workers=num_workers, pin_memory=True)
+                             num_workers=num_workers, pin_memory=False)
 
     test_loader = None
     if test_dir.exists():
         test_ds = ImageFolder(str(test_dir), transform=build_transforms(img_size, is_train=False))
         test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
-                                  num_workers=num_workers, pin_memory=True)
+                                  num_workers=num_workers, pin_memory=False)
         print(f"Test:  {len(test_ds)} images")
 
     print(f"Train: {len(train_subset)} images")
@@ -243,7 +243,7 @@ def evaluate(model: nn.Module, loader: DataLoader, criterion, device: str):
     for images, labels in loader:
         images, labels = images.to(device), labels.to(device)
 
-        with autocast():
+        with torch.amp.autocast(device_type=device if device != "cpu" else "cpu"):
             logits = model(images)
             loss = criterion(logits, labels)
 
@@ -283,7 +283,7 @@ def train_epoch(model, loader, optimizer, criterion, scaler, device, ema=None):
 
         optimizer.zero_grad()
 
-        with autocast():
+        with torch.amp.autocast(device_type=device if device != "cpu" else "cpu"):
             logits = model(images)
             loss = criterion(logits, labels)
 

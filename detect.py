@@ -72,7 +72,11 @@ def load_model(checkpoint_path: str, device: str = "mps"):
         use_multi_scale=use_multi_scale,
         pooling=pooling,
     )
-    model.load_state_dict(checkpoint["model_state_dict"])
+    # Remap old "backbone.xxx" keys to new "xxx" keys for backward compatibility
+    state_dict = checkpoint["model_state_dict"]
+    if any(k.startswith("backbone.") for k in state_dict.keys()):
+        state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict)
     model = model.to(device)
     model.eval()
 
