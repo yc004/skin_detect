@@ -78,7 +78,7 @@ class ModelManager:
     """Handles model loading, caching, and switching."""
 
     def __init__(self):
-        self.cache = {}  # path -> (model, class_names, class_risk, img_size, transform, info)
+        self.cache = {}  # path -> (model, class_names, class_names_zh, class_risk, img_size, transform, info)
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
 
     def load(self, model_path: str):
@@ -93,6 +93,7 @@ class ModelManager:
 
         checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
         class_names = checkpoint.get("class_names", [])
+        class_names_zh = checkpoint.get("class_names_zh", {})
         class_risk = checkpoint.get("class_risk", {})
 
         if not class_names:
@@ -101,6 +102,7 @@ class ModelManager:
                 with open(config_path) as f:
                     c = json.load(f)
                 class_names = c.get("class_names", [])
+                class_names_zh = c.get("class_names_zh", {})
                 class_risk = c.get("class_risk", {})
 
         num_classes = len(class_names)
@@ -177,7 +179,7 @@ class ModelManager:
             "epoch": checkpoint.get("epoch"),
         }
 
-        self.cache[model_path] = (model, class_names, class_risk, img_size, transform, info)
+        self.cache[model_path] = (model, class_names, class_names_zh, class_risk, img_size, transform, info)
         print(f"  ✓ Loaded: {model_name} | pooling={pooling} | ms={use_multi_scale} | img={img_size}")
         return self.cache[model_path]
 
@@ -201,7 +203,7 @@ def classify(image, model_path, show_cam, top_k):
         return None, _empty_report(), None, _model_info_html(model_path)
 
     try:
-        model, class_names, class_risk, img_size, transform, info = manager.load(model_path)
+        model, class_names, class_names_zh, class_risk, img_size, transform, info = manager.load(model_path)
     except Exception as e:
         return image, f"<p style='color:red'>Failed to load model: {e}</p>", None, ""
 
@@ -218,9 +220,10 @@ def classify(image, model_path, show_cam, top_k):
 
     predictions = []
     for prob, idx in zip(topk_probs, topk_indices):
-        name = class_names[idx]
-        risk = class_risk.get(name, "LOW")
-        predictions.append({"class": name, "confidence": float(prob), "risk": risk})
+        name_en = class_names[idx]
+        name_zh = class_names_zh.get(name_en, name_en)
+        risk = class_risk.get(name_en, "LOW")
+        predictions.append({"class": name_en, "class_zh": name_zh, "confidence": float(prob), "risk": risk})
 
     # Draw
     annotated = draw_classification_result(image, predictions, class_risk)
@@ -241,7 +244,7 @@ def classify_batch(files, model_path, show_cam):
         return [], "<p style='color:gray'>No images selected.</p>"
 
     try:
-        model, class_names, class_risk, img_size, transform, info = manager.load(model_path)
+        model, class_names, class_names_zh, class_risk, img_size, transform, info = manager.load(model_path)
     except Exception as e:
         return [], f"<p style='color:red'>Failed to load: {e}</p>"
 
@@ -260,16 +263,17 @@ def classify_batch(files, model_path, show_cam):
         logits = model(tensor)
         probs = F.softmax(logits, dim=1)
         top_prob, top_idx = probs.max(dim=1)
-        name = class_names[top_idx.item()]
-        risk = class_risk.get(name, "LOW")
+        name_en = class_names[top_idx.item()]
+        name_zh = class_names_zh.get(name_en, name_en)
+        risk = class_risk.get(name_en, "LOW")
         risk_counts[risk] += 1
 
         annotated = draw_classification_result(img, [
-            {"class": name, "confidence": float(top_prob), "risk": risk}
+            {"class": name_en, "class_zh": name_zh, "confidence": float(top_prob), "risk": risk}
         ], class_risk)
 
-        results.append((annotated, f"{Path(file_path).name}\n{name} ({top_prob:.1%})"))
-        summary_parts.append(f"{Path(file_path).name}: {name} ({top_prob:.1%}) [{risk}]")
+        results.append((annotated, f"{Path(file_path).name}\n{name_zh} ({top_prob:.1%})"))
+        summary_parts.append(f"{Path(file_path).name}: {name_zh} ({top_prob:.1%}) [{risk}]")
 
     summary = f"""
     <div style="padding:15px; background:#1a1a2e; border-radius:8px; color:#e0e0e0; font-family:sans-serif;">
@@ -301,7 +305,7 @@ def _build_report(predictions: list, info: dict) -> str:
         bar_rows += f"""
         <div style="margin: 8px 0;">
             <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:2px;">
-                <span>{'→' if i == 0 else ' '} {pred['class']}</span>
+                <span>{'→' if i == 0 else ' '} {pred.get('class_zh', pred['class'])}</span>
                 <span style="color:#aaa;">{pred['confidence']:.1%}</span>
             </div>
             <div style="background:#2a2a3e; border-radius:4px; height:8px;">

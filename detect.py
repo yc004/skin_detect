@@ -34,6 +34,7 @@ def load_model(checkpoint_path: str, device: str = "mps"):
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     class_names = checkpoint.get("class_names")
+    class_names_zh = checkpoint.get("class_names_zh", {})
     class_risk = checkpoint.get("class_risk", {})
 
     if class_names is None:
@@ -101,7 +102,7 @@ def load_model(checkpoint_path: str, device: str = "mps"):
     print(f"Epoch: {checkpoint.get('epoch', '?')} | Val Acc: {checkpoint.get('val_acc', 0):.4f}")
     print(f"Classes: {num_classes}")
 
-    return model, class_names, class_risk
+    return model, class_names, class_names_zh, class_risk
 
 
 # ============================================================
@@ -124,7 +125,7 @@ def get_transform(img_size: int = 224):
 # ============================================================
 
 @torch.no_grad()
-def predict(model, image_bgr: np.ndarray, class_names: list, class_risk: dict,
+def predict(model, image_bgr: np.ndarray, class_names: list, class_names_zh: dict, class_risk: dict,
             transform, device: str = "mps", top_k: int = 3, use_cam: bool = False):
     """
     Run classification on a single image.
@@ -143,9 +144,10 @@ def predict(model, image_bgr: np.ndarray, class_names: list, class_risk: dict,
 
     predictions = []
     for prob, idx in zip(topk_probs, topk_indices):
-        name = class_names[idx]
-        risk = class_risk.get(name, "LOW")
-        predictions.append({"class": name, "confidence": float(prob), "risk": risk})
+        name_en = class_names[idx]
+        name_zh = class_names_zh.get(name_en, name_en)
+        risk = class_risk.get(name_en, "LOW")
+        predictions.append({"class": name_en, "class_zh": name_zh, "confidence": float(prob), "risk": risk})
 
     result = {
         "predictions": predictions,
@@ -187,7 +189,7 @@ def main():
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model, class_names, class_risk = load_model(args.model, args.device)
+    model, class_names, class_names_zh, class_risk = load_model(args.model, args.device)
 
     # Get img_size from checkpoint config
     checkpoint = torch.load(args.model, map_location="cpu", weights_only=False)
@@ -220,14 +222,15 @@ def main():
             continue
 
         result, cam_image = predict(
-            model, image, class_names, class_risk, transform,
+            model, image, class_names, class_names_zh, class_risk, transform,
             device=args.device, top_k=args.top_k, use_cam=args.cam,
         )
 
         for i, pred in enumerate(result["predictions"]):
             risk_icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(pred["risk"], "⚪")
             marker = " →" if i == 0 else "  "
-            print(f"{marker} {risk_icon} {pred['class']:<30s} {pred['confidence']:.2%}  [{pred['risk']}]")
+            display_name = pred.get("class_zh", pred["class"])
+            print(f"{marker} {risk_icon} {display_name:<20s} {pred['confidence']:.2%}  [{pred['risk']}]")
 
         if result["top_risk"] == "HIGH":
             print(f"  ⚠️  HIGH RISK — clinical consultation advised")

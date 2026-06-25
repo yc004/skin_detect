@@ -53,7 +53,7 @@ def draw_classification_result(
 
     y = 65
     for i, pred in enumerate(predictions):
-        name = pred["class"]
+        name = pred.get("class_zh", pred.get("class", "unknown"))
         conf = pred["confidence"]
         risk = pred.get("risk", "LOW")
         color = RISK_COLORS_BGR.get(risk, (180, 180, 180))
@@ -70,12 +70,13 @@ def draw_classification_result(
         y += 28
 
     top = predictions[0]
+    top_name = top.get("class_zh", top.get("class", "unknown"))
     top_risk = top.get("risk", "LOW")
     banner_color = RISK_COLORS_BGR.get(top_risk, (100, 100, 100))
     cv2.rectangle(img, (0, 0), (w, 28), banner_color, -1)
-    banner_text = f"Prediction: {top['class']} ({top['confidence']:.1%})"
+    banner_text = f"Prediction: {top_name} ({top['confidence']:.1%})"
     if top_risk == "HIGH":
-        banner_text = f"!! HIGH RISK: {top['class']} ({top['confidence']:.1%}) — Seek Clinical Advice"
+        banner_text = f"!! HIGH RISK: {top_name} ({top['confidence']:.1%}) — Seek Clinical Advice"
     cv2.putText(img, banner_text, (10, 20),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 

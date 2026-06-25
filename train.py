@@ -60,6 +60,31 @@ CLASS_NAMES = [
     "Vitiligo", "Warts",
 ]
 
+CLASS_NAMES_ZH = {
+    "Acne": "痤疮",
+    "Actinic Keratosis": "光化性角化病",
+    "Benign Tumors": "良性肿瘤",
+    "Bullous": "大疱性皮肤病",
+    "Candidiasis": "念珠菌病",
+    "Drug Eruption": "药疹",
+    "Eczema": "湿疹",
+    "Infestations/Bites": "寄生虫/虫咬",
+    "Lichen": "苔藓",
+    "Lupus": "红斑狼疮",
+    "Moles": "痣",
+    "Psoriasis": "银屑病",
+    "Rosacea": "玫瑰痤疮",
+    "Seborrheic Keratoses": "脂溢性角化病",
+    "Skin Cancer": "皮肤癌",
+    "Sun/Sunlight Damage": "日光性损伤",
+    "Tinea": "癣",
+    "Unknown/Normal": "未知/正常",
+    "Vascular Tumors": "血管性肿瘤",
+    "Vasculitis": "血管炎",
+    "Vitiligo": "白癜风",
+    "Warts": "疣",
+}
+
 NUM_CLASSES = len(CLASS_NAMES)
 
 CLASS_RISK = {
@@ -432,6 +457,7 @@ def train_model(
                 "val_acc": val_acc,
                 "val_loss": val_loss,
                 "class_names": CLASS_NAMES,
+                "class_names_zh": CLASS_NAMES_ZH,
                 "class_risk": CLASS_RISK,
                 "config": {
                     "model_name": model_name,
