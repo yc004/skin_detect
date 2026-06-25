@@ -1,0 +1,10 @@
+# Skin Lesion Detection Dataset (YOLO format)
+# Generated via pseudo-labeling from Skin Disease classification dataset
+
+path: /Users/daniel/coding/CV_exp/skin_detect/data
+train: images/train
+val: images/val
+test: images/test
+
+nc: 8
+names: ['skin_cancer', 'nevus', 'actinic_keratosis', 'seborrheic_keratosis', 'benign_tumor', 'vascular_lesion', 'wart', 'infestation_bite']

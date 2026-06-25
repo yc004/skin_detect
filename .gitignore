@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Virtual env
+.venv/
+venv/
+
+# Data (too large for git)
+data/images/
+data/labels/
+dataset/
+
+# Training outputs
+runs/
+results/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gradio
+gradio_cached_examples/
+*.pkl
