@@ -199,19 +199,6 @@
     
     \vfill
     
-    % 填写说明
-    \begin{flushleft}
-    {\zihao{5}\heiti 填写说明：}\par
-    \vspace{0.3cm}
-    \begin{enumerate}[leftmargin=2em, itemsep=0.2em, label={\arabic*、}]
-        \item \zihao{5} 本文档适用于人工智能挑战赛预选赛；
-        \item \zihao{5} 尽管预选赛仅完成部分工作，但是本文档需要针对决赛做出方案设计；
-        \item \zihao{5} 正文、标题格式已经在本文中设定，请勿修改；
-        \item \zihao{5} 本文档应结构清晰，突出重点，适当配合图表，描述准确，不易冗长拖沓；
-        \item \zihao{5} 提交文档时，以PDF格式提交；
-        \item \zihao{5} 本文档内容是正式参赛内容的组成部分，务必真实填写。如不属实，将导致奖项等级降低甚至终止本作品参加比赛。
-    \end{enumerate}
-    \end{flushleft}
     
 \end{titlepage}
 
@@ -391,6 +378,13 @@ f^{(g)} = \left[ \frac{1}{|\Omega|} \sum_{x \in \Omega} x^p \right]^{\frac{1}{p}
 \end{equation}
 
 EMA 在推理时使用 shadow 权重，等效窗口约 1,000 步，在不增加推理开销的前提下提升泛化能力。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{img/architecture_comparison.png}
+    \caption{基线模型（ConvNeXt V1 + AvgPool）与改进模型（ConvNeXt V2 + GeM + EMA）架构对比。改进模型在三个位置做出了改动：① V1→V2，每个 block 新增 GRN 层；② AdaptiveAvgPool2d→GeM Pooling；③ 训练阶段引入 EMA 权重平滑。}
+    \label{fig:architecture_comparison}
+\end{figure}
 
 \section{训练配置}
 
