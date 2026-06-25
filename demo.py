@@ -248,8 +248,9 @@ def classify(image, model_path, show_cam, top_k):
     for prob, idx in zip(topk_probs, topk_indices):
         name_en = class_names[idx]
         name_zh = class_names_zh.get(name_en, name_en)
+        display_name = f"{name_zh}（{name_en}）" if name_zh != name_en else name_en
         risk = class_risk.get(name_en, "LOW")
-        predictions.append({"class": name_en, "class_zh": name_zh, "confidence": float(prob), "risk": risk})
+        predictions.append({"class": name_en, "class_zh": display_name, "confidence": float(prob), "risk": risk})
 
     # Draw
     annotated = draw_classification_result(image, predictions, class_risk)
@@ -292,15 +293,16 @@ def classify_batch(files, model_path, show_cam):
         top_val = top_prob.item()
         name_en = class_names[top_idx.item()]
         name_zh = class_names_zh.get(name_en, name_en)
+        display_name = f"{name_zh}（{name_en}）" if name_zh != name_en else name_en
         risk = class_risk.get(name_en, "LOW")
         risk_counts[risk] += 1
 
         annotated = draw_classification_result(img, [
-            {"class": name_en, "class_zh": name_zh, "confidence": top_val, "risk": risk}
+            {"class": name_en, "class_zh": display_name, "confidence": top_val, "risk": risk}
         ], class_risk)
 
-        results.append((annotated, f"{Path(file_path).name}\n{name_zh} ({top_val:.1%})"))
-        summary_parts.append(f"{Path(file_path).name}: {name_zh} ({top_val:.1%}) [{risk}]")
+        results.append((annotated, f"{Path(file_path).name}\n{display_name} ({top_val:.1%})"))
+        summary_parts.append(f"{Path(file_path).name}: {display_name} ({top_val:.1%}) [{risk}]")
 
     summary = f"""
     <div style="padding:15px; background:#1a1a2e; border-radius:8px; color:#e0e0e0; font-family:sans-serif;">

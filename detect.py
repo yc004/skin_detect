@@ -171,8 +171,9 @@ def predict(model, image_bgr: np.ndarray, class_names: list, class_names_zh: dic
     for prob, idx in zip(topk_probs, topk_indices):
         name_en = class_names[idx]
         name_zh = class_names_zh.get(name_en, name_en)
+        display_name = f"{name_zh}（{name_en}）" if name_zh != name_en else name_en
         risk = class_risk.get(name_en, "LOW")
-        predictions.append({"class": name_en, "class_zh": name_zh, "confidence": float(prob), "risk": risk})
+        predictions.append({"class": name_en, "class_zh": display_name, "confidence": float(prob), "risk": risk})
 
     result = {
         "predictions": predictions,
