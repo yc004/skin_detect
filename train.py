@@ -22,7 +22,9 @@ Usage:
 import argparse
 import sys
 import json
+import csv
 from pathlib import Path
+from datetime import datetime
 
 import torch
 import torch.nn as nn
@@ -38,7 +40,12 @@ import numpy as np
 from sklearn.metrics import classification_report
 
 from models.modules import ConvNeXtWithFeatures, ModelEMA, GeMPool
-from utils.visualize import plot_confusion_matrix, plot_training_curves
+from utils.visualize import (
+    plot_confusion_matrix,
+    plot_training_curves,
+    plot_roc_curves,
+    plot_per_class_metrics,
+)
 
 # ============================================================
 # Config
@@ -447,59 +454,92 @@ def train_model(
             print(f"\nEarly stopping at epoch {epoch}")
             break
 
-    # Final evaluation
+    # ============================================================
+    # Final Evaluation — Comprehensive Report
+    # ============================================================
+
     print("\n" + "=" * 60)
     print("FINAL EVALUATION")
     print("=" * 60)
     print(f"Best epoch: {best_epoch} | Best val acc: {best_val_acc:.4f}")
 
-    # Load best weights (use "cpu" to avoid device serialization issues)
+    # Load best weights
     checkpoint = torch.load(output_dir / "best.pt", map_location="cpu", weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
 
-    # If we used EMA, apply EMA weights for final eval
+    # Apply EMA if available
     if ema is not None and "ema_state" in checkpoint:
         ema.load_state_dict(checkpoint["ema_state"])
         ema.apply_shadow(model)
-        val_result = evaluate(model, val_loader, criterion, device)
-        ema.restore(model)
-        print(f"EMA Val Acc: {val_result['accuracy']:.4f}")
-    else:
-        val_result = evaluate(model, val_loader, criterion, device)
+
+    # --- Validation Metrics ---
+    val_result = evaluate(model, val_loader, criterion, device)
 
     print(f"\nValidation Set:")
     print(f"  Accuracy: {val_result['accuracy']:.4f}")
     print(f"  Loss:     {val_result['loss']:.4f}")
 
-    print("\nClassification Report:")
-    report = classification_report(
+    # Classification report (text)
+    report_str = classification_report(
         val_result["labels"], val_result["preds"],
         target_names=CLASS_NAMES, zero_division=0
     )
-    print(report)
+    print("\n" + report_str)
+    (output_dir / "classification_report.txt").write_text(report_str)
 
     # Confusion matrix
-    cm_path = output_dir / f"confusion_matrix_{variant_name}.png"
+    cm_path = output_dir / "confusion_matrix.png"
     plot_confusion_matrix(val_result["labels"], val_result["preds"],
-                           CLASS_NAMES, str(cm_path))
+                           CLASS_NAMES, str(cm_path),
+                           title=f"Confusion Matrix — {variant_name} (Val)")
+
+    # ROC curves
+    roc_path = output_dir / "roc_curves.png"
+    auc_summary = plot_roc_curves(val_result["labels"], val_result["probs"],
+                                   CLASS_NAMES, str(roc_path))
+
+    # Per-class metrics chart
+    metrics_path = output_dir / "per_class_metrics.png"
+    per_class = plot_per_class_metrics(val_result["labels"], val_result["preds"],
+                                        CLASS_NAMES, str(metrics_path))
 
     # Training curves
-    curves_path = output_dir / f"training_curves_{variant_name}.png"
+    curves_path = output_dir / "training_curves.png"
     plot_training_curves(history, str(curves_path))
 
-    # Test set
+    # --- Test Metrics ---
+    test_result = None
     if test_loader is not None:
         test_result = evaluate(model, test_loader, criterion, device)
         print(f"\nTest Set:")
         print(f"  Accuracy: {test_result['accuracy']:.4f}")
         print(f"  Loss:     {test_result['loss']:.4f}")
 
-        cm_path = output_dir / f"confusion_matrix_test_{variant_name}.png"
+        cm_path = output_dir / "confusion_matrix_test.png"
         plot_confusion_matrix(test_result["labels"], test_result["preds"],
-                               CLASS_NAMES, str(cm_path))
+                               CLASS_NAMES, str(cm_path),
+                               title=f"Confusion Matrix — {variant_name} (Test)")
 
-    # Save config
+        roc_path = output_dir / "roc_curves_test.png"
+        plot_roc_curves(test_result["labels"], test_result["probs"],
+                         CLASS_NAMES, str(roc_path))
+
+    # --- Save History CSV ---
+    csv_path = output_dir / "training_history.csv"
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["epoch", "train_loss", "train_acc", "val_loss", "val_acc"])
+        for i in range(len(history["train_loss"])):
+            writer.writerow([
+                i + 1,
+                f"{history['train_loss'][i]:.6f}",
+                f"{history['train_acc'][i]:.6f}",
+                f"{history['val_loss'][i]:.6f}",
+                f"{history['val_acc'][i]:.6f}",
+            ])
+
+    # --- Save Comprehensive Config ---
     config_data = {
         "variant": variant_name,
         "class_names": CLASS_NAMES,
@@ -508,15 +548,39 @@ def train_model(
         "img_size": img_size,
         "config": checkpoint["config"],
         "num_params": extra_info["num_trainable"],
+        "num_params_total": extra_info["num_params"],
+        # Results
+        "best_epoch": best_epoch,
+        "best_val_acc": float(best_val_acc),
+        "val_accuracy": float(val_result["accuracy"]),
+        "val_loss": float(val_result["loss"]),
+        "test_accuracy": float(test_result["accuracy"]) if test_result else None,
+        "test_loss": float(test_result["loss"]) if test_result else None,
+        "auc_micro_avg": auc_summary.get("micro_avg"),
+        "per_class_metrics": per_class,
+        "training_time": datetime.now().isoformat(),
     }
-    with open(output_dir / f"config_{variant_name}.json", "w") as f:
-        json.dump(config_data, f, indent=2)
+    with open(output_dir / "experiment_summary.json", "w") as f:
+        json.dump(config_data, f, indent=2, ensure_ascii=False)
 
-    print(f"\nOutputs saved to: {output_dir.absolute()}")
-    print(f"  - best.pt")
-    print(f"  - config_{variant_name}.json")
-    print(f"  - confusion_matrix_{variant_name}.png")
-    print(f"  - training_curves_{variant_name}.png")
+    # Restore if EMA was applied
+    if ema is not None and "ema_state" in checkpoint:
+        ema.restore(model)
+
+    # --- Print Output Summary ---
+    print(f"\n{'─' * 50}")
+    print(f"Outputs saved to: {output_dir.absolute()}")
+    print(f"{'─' * 50}")
+    print(f"  📊 experiment_summary.json   — All metrics + config")
+    print(f"  📋 classification_report.txt — Per-class P/R/F1")
+    print(f"  📈 training_history.csv      — Per-epoch loss & acc")
+    print(f"  🏋️  best.pt                   — Model checkpoint")
+    print(f"  🖼️  confusion_matrix.png      — Val confusion matrix")
+    print(f"  🖼️  confusion_matrix_test.png  — Test confusion matrix")
+    print(f"  🖼️  roc_curves.png            — Val ROC curves")
+    print(f"  🖼️  roc_curves_test.png       — Test ROC curves")
+    print(f"  🖼️  per_class_metrics.png     — Precision/Recall/F1 bars")
+    print(f"  🖼️  training_curves.png       — Loss & accuracy curves")
 
     return model
 
@@ -532,8 +596,8 @@ def main():
     # Data
     parser.add_argument("--data", type=str, default="dataset/SkinDisease/SkinDisease",
                         help="Dataset root path")
-    parser.add_argument("--output", type=str, default="runs/convnext",
-                        help="Output directory")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output directory (default: runs/<variant_name>)")
 
     # Model ablation
     parser.add_argument("--model", type=str, default="convnext_tiny",
@@ -582,6 +646,17 @@ def main():
     if not Path(args.data).exists():
         print(f"[ERROR] Dataset not found: {args.data}")
         sys.exit(1)
+
+    # Auto-generate output dir from variant if not specified
+    if args.output is None:
+        variant_parts = [args.model]
+        if args.pooling == "gem":
+            variant_parts.append("GeM")
+        if args.multi_scale:
+            variant_parts.append("MS")
+        if args.ema:
+            variant_parts.append("EMA")
+        args.output = f"runs/{'_'.join(variant_parts)}"
 
     epochs = 5 if args.quick else args.epochs
 
