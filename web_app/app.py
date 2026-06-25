@@ -62,12 +62,14 @@ app = Flask(__name__)
 # ============================================================
 
 MODEL = None
+MODEL_BASELINE = None  # For Grad-CAM comparison
 CLASS_NAMES = []
 CLASS_RISK = {}
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 TRANSFORM = None
 IMG_SIZE = 224
 MODEL_INFO = {}
+BASELINE_INFO = {}
 
 # LLM client
 LLM_AVAILABLE = False
@@ -179,6 +181,58 @@ def load_model(model_path: str = None):
     # Store zh mapping for templates
     app.config["CLASS_NAMES_ZH"] = class_names_zh
     print(f"  ✓ Model loaded: {model_name} | Val Acc: {MODEL_INFO.get('val_acc', 0):.2%}")
+
+
+def load_baseline_model():
+    """Load baseline model (convnext_tiny + avg) for Grad-CAM comparison."""
+    global MODEL_BASELINE, BASELINE_INFO
+
+    if MODEL_BASELINE is not None:
+        return
+
+    runs = Path(__file__).parent.parent / "runs"
+    baseline_path = runs / "convnext_tiny" / "best.pt"
+    if not baseline_path.exists():
+        # Try to find any V1 model
+        for p in sorted(runs.rglob("best.pt")):
+            info_path = p.parent / "experiment_summary.json"
+            if info_path.exists():
+                cfg = json.loads(info_path.read_text()).get("config", {})
+                if cfg.get("model_name") == "convnext_tiny" and cfg.get("pooling") == "avg":
+                    baseline_path = p
+                    break
+
+    if not baseline_path.exists():
+        print("[WARN] No baseline model found for comparison.")
+        return
+
+    print(f"Loading baseline: {baseline_path}")
+    ckpt = torch.load(str(baseline_path), map_location="cpu", weights_only=False)
+    cfg = ckpt.get("config", {})
+    num_classes = len(ckpt.get("class_names", []) or range(22))
+    if not num_classes or num_classes == 0:
+        num_classes = 22
+
+    timm_name = "convnext_tiny.fb_in22k_ft_in1k"
+    backbone = timm.create_model(timm_name, pretrained=False, num_classes=num_classes)
+    MODEL_BASELINE = ConvNeXtWithFeatures(
+        backbone=backbone, num_classes=num_classes,
+        dropout=0.0, use_multi_scale=False, pooling="avg",
+    )
+    sd = ckpt["model_state_dict"]
+    if any(k.startswith("backbone.") for k in sd):
+        sd = {k.replace("backbone.", ""): v for k, v in sd.items()}
+    if "head.0.weight" in sd and "head.2.weight" not in sd:
+        remap = {}
+        for k in list(sd.keys()):
+            if k.startswith("head.0."): remap[k] = k.replace("head.0.", "head.2.")
+            elif k.startswith("head.4."): remap[k] = k
+        for ok, nk in remap.items(): sd[nk] = sd.pop(ok)
+    MODEL_BASELINE.load_state_dict(sd)
+    MODEL_BASELINE = MODEL_BASELINE.to(DEVICE)
+    MODEL_BASELINE.eval()
+    BASELINE_INFO = {"name": "ConvNeXt V1 + Avg", "val_acc": ckpt.get("val_acc")}
+    print(f"  ✓ Baseline loaded | Val Acc: {BASELINE_INFO.get('val_acc', 0):.2%}")
 
 
 # ============================================================
@@ -471,6 +525,127 @@ def api_gradcam():
 
 
 # ============================================================
+# Routes — Grad-CAM Comparison (baseline vs improved)
+# ============================================================
+
+def _generate_gradcam(model, img_bgr, img_rgb):
+    """Generate Grad-CAM heatmap for a given model. Returns BGR overlay image."""
+    h, w = img_bgr.shape[:2]
+    tensor = TRANSFORM(img_rgb).unsqueeze(0).to(DEVICE)
+
+    target_layer = None
+    for name, module in model.named_modules():
+        if "stages.3" in name and isinstance(module, torch.nn.Conv2d):
+            target_layer = module
+
+    if target_layer is None:
+        return None
+
+    activations = {}
+    gradients = {}
+
+    def fwd_hook(m, inp, out):
+        activations["v"] = out
+
+    def bwd_hook(m, g_in, g_out):
+        gradients["v"] = g_out[0]
+
+    fh = target_layer.register_forward_hook(fwd_hook)
+    bh = target_layer.register_full_backward_hook(bwd_hook)
+
+    model.zero_grad()
+    logits = model(tensor)
+    pred_idx = logits.argmax(dim=1).item()
+    logits[0, pred_idx].backward()
+
+    fh.remove()
+    bh.remove()
+
+    act = activations["v"].detach()
+    grad = gradients["v"].detach()
+    weights = grad.mean(dim=(2, 3), keepdim=True)
+    cam = (weights * act).sum(dim=1).squeeze(0)
+    cam = F.relu(cam)
+    if cam.max() > 0:
+        cam = cam / cam.max()
+
+    cam = cam.cpu().numpy()
+    cam = cv2.resize(cam, (w, h))
+    cam = np.uint8(255 * cam)
+    heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+    return cv2.addWeighted(img_bgr, 0.4, heatmap, 0.6, 0), pred_idx
+
+
+def _add_label_pil(img_bgr, label, pos=(10, 6)):
+    """Add Chinese text label to BGR image using PIL."""
+    overlay_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(overlay_rgb)
+    draw = ImageDraw.Draw(pil_img)
+    font = None
+    for fp in ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/STHeiti Light.ttc",
+               "C:/Windows/Fonts/msyh.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]:
+        if Path(fp).exists():
+            font = ImageFont.truetype(fp, 14)
+            break
+    if font is None:
+        font = ImageFont.load_default()
+    draw.text(pos, label, font=font, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+
+@app.route("/api/gradcam_compare", methods=["POST"])
+def api_gradcam_compare():
+    """Generate side-by-side Grad-CAM comparison (baseline vs improved)."""
+    if MODEL is None:
+        return jsonify({"error": "改进模型未加载"}), 500
+    if MODEL_BASELINE is None:
+        return jsonify({"error": "基线模型未加载"}), 500
+
+    file = request.files.get("image")
+    if not file:
+        return jsonify({"error": "未上传图片"}), 400
+
+    img_bytes = file.read()
+    img_np = np.frombuffer(img_bytes, np.uint8)
+    img_bgr = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        return jsonify({"error": "无法解析图片"}), 400
+
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+    # Generate heatmaps
+    result_imp = _generate_gradcam(MODEL, img_bgr, img_rgb)
+    result_base = _generate_gradcam(MODEL_BASELINE, img_bgr, img_rgb)
+
+    if result_imp is None or result_base is None:
+        return jsonify({"error": "Grad-CAM生成失败"}), 500
+
+    overlay_imp, pred_imp = result_imp
+    overlay_base, pred_base = result_base
+
+    # Add labels
+    name_imp = app.config["CLASS_NAMES_ZH"].get(CLASS_NAMES[pred_imp], CLASS_NAMES[pred_imp]) if CLASS_NAMES and pred_imp < len(CLASS_NAMES) else "—"
+    name_base = app.config["CLASS_NAMES_ZH"].get(CLASS_NAMES[pred_base], CLASS_NAMES[pred_base]) if CLASS_NAMES and pred_base < len(CLASS_NAMES) else "—"
+
+    overlay_imp = _add_label_pil(overlay_imp, f"改进: {name_imp}")
+    overlay_base = _add_label_pil(overlay_base, f"基线: {name_base}")
+
+    # Concatenate side by side
+    h = max(overlay_imp.shape[0], overlay_base.shape[0])
+    overlay_imp = cv2.resize(overlay_imp, (int(overlay_imp.shape[1] * h / overlay_imp.shape[0]), h))
+    overlay_base = cv2.resize(overlay_base, (int(overlay_base.shape[1] * h / overlay_base.shape[0]), h))
+    combined = np.hstack([overlay_base, overlay_imp])
+
+    _, buf = cv2.imencode(".jpg", combined, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    img_b64 = base64.b64encode(buf).decode("utf-8")
+    return jsonify({
+        "heatmap": f"data:image/jpeg;base64,{img_b64}",
+        "baseline_class": name_base,
+        "improved_class": name_imp,
+    })
+
+
+# ============================================================
 # Routes — Models list
 # ============================================================
 
@@ -506,6 +681,7 @@ def main():
 
     _init_llm()
     load_model(args.model)
+    load_baseline_model()
 
     app.run(host="0.0.0.0", port=args.port, debug=args.debug)
 

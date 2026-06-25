@@ -366,11 +366,11 @@ async function fetchGradCAM(file) {
   const formData = new FormData();
   formData.append('image', file);
   try {
-    const resp = await fetch('/api/gradcam', { method: 'POST', body: formData });
+    const resp = await fetch('/api/gradcam_compare', { method: 'POST', body: formData });
     const data = await resp.json();
     if (data.heatmap) {
       camImage.src = data.heatmap;
-      camLabel.textContent = `🔥 注意力区域: ${data.class}`;
+      camLabel.innerHTML = `🔥 注意力对比 &nbsp;|&nbsp; <span style="color:#888">基线: ${data.baseline_class}</span> &nbsp;vs&nbsp; <span style="color:#ff9800">改进: ${data.improved_class}</span>`;
     } else {
       camLabel.textContent = '生成失败: ' + (data.error || '未知错误');
     }
