@@ -160,11 +160,19 @@ header p {
   background: #1a2a1a;
   border-radius: 8px;
   border-left: 3px solid var(--accent);
-  padding: 12px;
+  padding: 14px 16px;
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.8;
   white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
 }
+.ai-report-content b, .ai-report-content strong { color: var(--accent); }
+.ai-report-content .section-title { color: var(--accent); font-weight: 600; display: block; margin: 10px 0 4px 0; }
+.ai-report-content .section-title:first-child { margin-top: 0; }
+.ai-report-content hr { border-color: #333; margin: 8px 0; }
+.ai-report-content .disclaimer { color: #888; font-size: 10px; font-style: italic; display: block; margin-top: 10px; padding-top: 8px; border-top: 1px solid #333; }
 .ai-loading { font-size: 12px; color: var(--muted); padding: 8px 0; }
 
 /* Chat */
