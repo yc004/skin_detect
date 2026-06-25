@@ -26,6 +26,7 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 import timm
 from flask import Flask, request, jsonify, render_template, Response
+from PIL import Image, ImageDraw, ImageFont
 
 from models.modules import ConvNeXtWithFeatures
 
@@ -444,11 +445,25 @@ def api_gradcam():
     heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
     overlay = cv2.addWeighted(img_bgr, 0.4, heatmap, 0.6, 0)
 
-    # Add label
+    # Add label with PIL (supports Chinese)
     class_en = CLASS_NAMES[pred_idx]
     class_zh = app.config["CLASS_NAMES_ZH"].get(class_en, class_en)
-    cv2.putText(overlay, f"Grad-CAM: {class_zh}", (10, 28),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
+    label = f"Grad-CAM: {class_zh}"
+    # Render with PIL
+    overlay_rgb = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(overlay_rgb)
+    draw = ImageDraw.Draw(pil_img)
+    # Find CJK font
+    font = None
+    for fp in ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/STHeiti Light.ttc",
+               "C:/Windows/Fonts/msyh.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]:
+        if Path(fp).exists():
+            font = ImageFont.truetype(fp, 18)
+            break
+    if font is None:
+        font = ImageFont.load_default()
+    draw.text((10, 6), label, font=font, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+    overlay = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
     _, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 92])
     img_b64 = base64.b64encode(buf).decode("utf-8")
