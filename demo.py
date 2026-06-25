@@ -131,11 +131,28 @@ class ModelManager:
             ema.load_state_dict(checkpoint["ema_state"])
             ema.apply_shadow(model)
 
-        # Remap state_dict for backward compatibility:
-        # Old checkpoints use "backbone.stem.xxx" keys, new architecture uses "stem.xxx"
+        # Remap state_dict for backward compatibility
         state_dict = checkpoint["model_state_dict"]
+
+        # Fix 1: Old code wrapped backbone as `self.backbone = backbone`
+        #         → keys have "backbone." prefix. New code uses self.stem/self.stages.
         if any(k.startswith("backbone.") for k in state_dict.keys()):
             state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+
+        # Fix 2: Old head order was norm→pool→flatten→dropout→linear (head.0=norm).
+        #         New head order is  pool→flatten→norm→dropout→linear (head.2=norm).
+        #         Remap head.0 (norm) → head.2.
+        if "head.0.weight" in state_dict and "head.2.weight" not in state_dict:
+            remap = {}
+            for k in list(state_dict.keys()):
+                if k.startswith("head."):
+                    if k.startswith("head.0."):
+                        remap[k] = k.replace("head.0.", "head.2.")  # norm moved
+                    elif k.startswith("head.4."):
+                        remap[k] = k  # linear unchanged
+            for old_k, new_k in remap.items():
+                state_dict[new_k] = state_dict.pop(old_k)
+
         model.load_state_dict(state_dict)
         model = model.to(self.device)
         model.eval()

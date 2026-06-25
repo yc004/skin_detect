@@ -72,10 +72,24 @@ def load_model(checkpoint_path: str, device: str = "mps"):
         use_multi_scale=use_multi_scale,
         pooling=pooling,
     )
-    # Remap old "backbone.xxx" keys to new "xxx" keys for backward compatibility
+    # Remap state_dict for backward compatibility
     state_dict = checkpoint["model_state_dict"]
+
+    # Fix 1: Old "backbone." prefix → remove
     if any(k.startswith("backbone.") for k in state_dict.keys()):
         state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+
+    # Fix 2: Old head order norm→pool→... → new order pool→flatten→norm→...
+    if "head.0.weight" in state_dict and "head.2.weight" not in state_dict:
+        remap = {}
+        for k in list(state_dict.keys()):
+            if k.startswith("head.0."):
+                remap[k] = k.replace("head.0.", "head.2.")
+            elif k.startswith("head.4."):
+                remap[k] = k
+        for old_k, new_k in remap.items():
+            state_dict[new_k] = state_dict.pop(old_k)
+
     model.load_state_dict(state_dict)
     model = model.to(device)
     model.eval()
