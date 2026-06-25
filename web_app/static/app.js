@@ -3,10 +3,18 @@
 // ============================================================
 
 let classificationCtx = null;  // Store classification context for chat
+let activeAbortController = null;  // Cancel previous SSE streams
 
 // Color map
 const RISK_COLORS = { HIGH: '#ef5350', MEDIUM: '#ff9800', LOW: '#66bb6a' };
 const BAR_COLORS = ['#4fc3f7', '#81c784', '#ce93d8', '#ffb74d', '#e57373'];
+
+function abortActiveStreams() {
+  if (activeAbortController) {
+    activeAbortController.abort();
+    activeAbortController = null;
+  }
+}
 
 // ============================================================
 // Image Upload
@@ -46,6 +54,9 @@ btnClear.addEventListener('click', resetAll);
 function handleFile(file) {
   if (!file.type.startsWith('image/')) return;
 
+  // Cancel any active SSE streams from previous classification
+  abortActiveStreams();
+
   const reader = new FileReader();
   reader.onload = (e) => {
     previewImage.src = e.target.result;
@@ -55,6 +66,8 @@ function handleFile(file) {
     classifyImage(file);
   };
   reader.readAsDataURL(file);
+  // Reset file input so the same file can be re-selected
+  fileInput.value = '';
 }
 
 function resetAll() {
@@ -164,11 +177,15 @@ async function streamAIReport(topPrediction) {
   contentDiv.textContent = '';
   loadingDiv.style.display = '';
 
+  // Use AbortController to cancel previous stream
+  activeAbortController = new AbortController();
+
   try {
     const resp = await fetch('/api/report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ top: topPrediction }),
+      signal: activeAbortController.signal,
     });
 
     const reader = resp.body.getReader();
@@ -199,7 +216,9 @@ async function streamAIReport(topPrediction) {
         }
       }
     }
+    activeAbortController = null;
   } catch (err) {
+    if (err.name === 'AbortError') return;  // Intentionally cancelled
     contentDiv.textContent = '[AI建议生成失败: ' + err.message + ']';
   }
   loadingDiv.style.display = 'none';
@@ -229,6 +248,9 @@ async function sendChat() {
   chatInput.disabled = true;
   btnSend.disabled = true;
 
+  // Cancel previous chat stream
+  abortActiveStreams();
+
   // Add user message
   addChatMsg('user', message);
   chatHistory.push({ role: 'user', content: message });
@@ -237,15 +259,18 @@ async function sendChat() {
   const assistantDiv = addChatMsg('assistant', '');
   chatHistory.push({ role: 'assistant', content: '' });
 
+  activeAbortController = new AbortController();
+
   try {
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: message,
-        history: chatHistory.slice(0, -1),  // exclude the empty assistant entry
+        history: chatHistory.slice(0, -1),
         context: classificationCtx,
       }),
+      signal: activeAbortController.signal,
     });
 
     const reader = resp.body.getReader();
@@ -275,10 +300,12 @@ async function sendChat() {
       }
     }
   } catch (err) {
+    if (err.name === 'AbortError') return;
     assistantDiv.textContent = '[回复失败: ' + err.message + ']';
     chatHistory[chatHistory.length - 1].content = assistantDiv.textContent;
   }
 
+  activeAbortController = null;
   chatInput.disabled = false;
   btnSend.disabled = false;
   chatInput.focus();
