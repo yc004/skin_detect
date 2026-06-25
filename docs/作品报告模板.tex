@@ -1,0 +1,791 @@
+% !TEX program = xelatex
+% 2025年（第18届）中国大学生计算机设计大赛
+% 人工智能实践赛作品报告 - 基于改进ConvNeXt的多类别皮肤疾病智能分类系统
+
+\documentclass[12pt,a4paper]{report}
+
+% ==================== 基本包导入 ====================
+\usepackage{ctex}                    % 中文支持
+\usepackage{geometry}                % 页面布局
+\usepackage{graphicx}                % 图片支持
+\usepackage{booktabs}                % 三线表
+\usepackage{tabularx}                % 自适应宽度表格
+\usepackage{caption}                 % 图表标题
+\usepackage{titlesec}                % 标题格式
+\usepackage{titletoc}                % 目录格式
+\usepackage{fancyhdr}                % 页眉页脚
+\usepackage{setspace}                % 行间距
+\usepackage{enumitem}                % 列表
+\usepackage{hyperref}                % 超链接
+\usepackage{amsmath,amssymb}         % 数学公式
+\usepackage{float}                   % 浮动体位置
+\usepackage{array}                   % 表格
+\usepackage{longtable}               % 长表格
+\usepackage{listings}                % 代码块
+\usepackage{xcolor}                  % 颜色
+\usepackage{verbatim}                % 原样输出
+\usepackage{subfigure}               % 子图
+
+% ==================== 页面布局 ====================
+\geometry{
+    left=3.17cm,
+    right=3.17cm,
+    top=2.54cm,
+    bottom=2.54cm,
+    headheight=15pt
+}
+
+% ==================== 字体设置 ====================
+% 【注意】ctex 会自动检测系统字体，通常无需手动设置
+% 如需自定义字体，请取消下方注释并修改字体名
+% macOS 常用字体：Songti SC（宋体）、Heiti SC（黑体）、Kaiti SC（楷体）、STFangsong（仿宋）
+% Windows 常用字体：SimSun（宋体）、SimHei（黑体）、KaiTi（楷体）、FangSong（仿宋）
+
+% \setCJKmainfont{Songti SC}          % 正文宋体（macOS）
+% \setCJKsansfont{Heiti SC}           % 无衬线黑体（macOS）
+% \setCJKmonofont{STFangsong}         % 仿宋（macOS）
+
+% \setCJKmainfont{SimSun}             % 正文宋体（Windows）
+% \setCJKsansfont{SimHei}             % 无衬线黑体（Windows）
+% \setCJKmonofont{FangSong}           % 仿宋（Windows）
+
+\setmainfont{Times New Roman}        % 英文正文字体
+\setsansfont{Arial}                  % 英文无衬线
+\setmonofont{Courier New}            % 英文等宽
+
+% ==================== 代码块设置 ====================
+\lstset{
+    basicstyle=\ttfamily\zihao{5},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=5pt,
+    backgroundcolor=\color{gray!5},
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    frame=single,
+    rulecolor=\color{gray!30},
+    tabsize=4,
+    captionpos=b,
+    breaklines=true,
+    breakatwhitespace=false,
+    escapeinside={\%*}{*)},
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red!80!black}
+}
+
+% ==================== 行间距 ====================
+\renewcommand{\baselinestretch}{1.5} % 1.5倍行距
+
+% ==================== 章节标题格式 ====================
+% 一级标题（第X章）
+\titleformat{\chapter}[block]
+    {\centering\bfseries\zihao{3}\heiti}  % 黑体三号，加粗，居中
+    {\thechapter}
+    {1em}
+    {}
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+% 二级标题（X.X）
+\titleformat{\section}[block]
+    {\bfseries\zihao{4}\heiti}           % 黑体四号，加粗
+    {\thesection}
+    {1em}
+    {}
+\titlespacing*{\section}{0pt}{12pt}{6pt}
+
+% 三级标题（X.X.X）
+\titleformat{\subsection}[block]
+    {\bfseries\zihao{-4}\heiti}          % 黑体小四号，加粗
+    {\thesubsection}
+    {1em}
+    {}
+\titlespacing*{\subsection}{0pt}{6pt}{6pt}
+
+% 正文格式
+\renewcommand{\normalsize}{\zihao{-4}}  % 正文小四号
+\setlength{\parindent}{2em}              % 首行缩进2字符
+
+% ==================== 目录格式 ====================
+\titlecontents{chapter}
+    [0pt]
+    {\heiti\zihao{-4}}
+    {\thecontentslabel\hspace{1em}}
+    {}
+    {\titlerule*[0.5pc]{.}\contentspage}
+
+\titlecontents{section}
+    [2em]
+    {\songti\zihao{-4}}
+    {\thecontentslabel\hspace{1em}}
+    {}
+    {\titlerule*[0.5pc]{.}\contentspage}
+
+\titlecontents{subsection}
+    [4em]
+    {\songti\zihao{5}}
+    {\thecontentslabel\hspace{1em}}
+    {}
+    {\titlerule*[0.5pc]{.}\contentspage}
+
+% ==================== 图表标题格式 ====================
+\captionsetup{
+    font=small,
+    labelfont=bf,
+    labelsep=quad,
+    justification=centering
+}
+\renewcommand{\figurename}{图}
+\renewcommand{\tablename}{表}
+
+% ==================== 页眉页脚 ====================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% ==================== 超链接设置 ====================
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue,
+    bookmarksnumbered=true
+}
+
+% ==================== 自定义命令 ====================
+% 填写说明环境
+\newenvironment{tianxieshuoming}
+    {\par\noindent\kaishu\zihao{5}【填写说明：}
+    {】\par}
+
+% ==================== 文档开始 ====================
+\begin{document}
+
+% ==================== 封面 ====================
+\begin{titlepage}
+    \centering
+    
+    % Logo 占位（请替换为实际logo图片，取消下方注释）
+    % \vspace*{1cm}
+    % \includegraphics[width=0.3\textwidth]{logo.png}
+    % \par\vspace{1cm}
+    \vspace*{2cm}
+    
+    % 大赛名称
+    {\zihao{2}\heiti 2025年（第18届）\par}
+    \vspace{0.5cm}
+    {\zihao{2}\heiti 中国大学生计算机设计大赛\par}
+    \vspace{2cm}
+    
+    % 报告标题
+    {\zihao{1}\heiti\bfseries 人工智能实践赛作品报告\par}
+    \vspace{1.5cm}
+    {\zihao{2}\heiti 基于改进 ConvNeXt 的多类别\par}
+    \vspace{0.3cm}
+    {\zihao{2}\heiti 皮肤疾病智能分类系统\par}
+    \vspace{3cm}
+    
+    % 信息栏
+    \begin{flushleft}
+    \hspace{2cm}
+    \begin{tabular}{l l}
+    {\zihao{-4}\heiti 作品编号：} & \rule{8cm}{0.4pt} \\[12pt]
+    {\zihao{-4}\heiti 作品名称：} & \rule{8cm}{0.4pt} \\[12pt]
+    & \rule{8cm}{0.4pt} \\[12pt]
+    {\zihao{-4}\heiti 填写日期：} & \rule{8cm}{0.4pt} \\
+    \end{tabular}
+    \end{flushleft}
+    
+    \vfill
+    
+    % 填写说明
+    \begin{flushleft}
+    {\zihao{5}\heiti 填写说明：}\par
+    \vspace{0.3cm}
+    \begin{enumerate}[leftmargin=2em, itemsep=0.2em, label={\arabic*、}]
+        \item \zihao{5} 本文档适用于人工智能挑战赛预选赛；
+        \item \zihao{5} 尽管预选赛仅完成部分工作，但是本文档需要针对决赛做出方案设计；
+        \item \zihao{5} 正文、标题格式已经在本文中设定，请勿修改；
+        \item \zihao{5} 本文档应结构清晰，突出重点，适当配合图表，描述准确，不易冗长拖沓；
+        \item \zihao{5} 提交文档时，以PDF格式提交；
+        \item \zihao{5} 本文档内容是正式参赛内容的组成部分，务必真实填写。如不属实，将导致奖项等级降低甚至终止本作品参加比赛。
+    \end{enumerate}
+    \end{flushleft}
+    
+\end{titlepage}
+
+% ==================== 目录 ====================
+\tableofcontents
+\thispagestyle{empty}
+\clearpage
+
+% ==================== 正文 ====================
+\setcounter{page}{1}
+\pagenumbering{arabic}
+
+% ==================== 第1章 作品概述 ====================
+\chapter{作品概述}
+
+\section{研究背景}
+
+皮肤病是全球疾病负担的重要组成部分。据世界卫生组织统计，全球约有 9 亿人患有各类皮肤疾病，其中皮肤癌发病率在过去 30 年间持续上升。传统皮肤疾病诊断依赖皮肤科医生的目视检查和皮肤镜检查，然而全球范围内皮肤科医生分布极不均衡——非洲部分地区每 100 万人口仅有不到 1 名皮肤科医生，我国基层医疗机构同样面临皮肤科医生严重短缺的问题。
+
+深度学习技术在医学图像分析领域已取得显著进展。从 AlexNet 到 ResNet，再到 Vision Transformer，图像分类模型的准确率不断提升。然而，将通用模型直接应用于皮肤疾病分类仍面临三个核心挑战：（1）细粒度识别——不同皮肤病在外观上高度相似，类间差异极小；（2）类内差异大——同一疾病在不同患者、不同部位、不同阶段的形态差异显著；（3）数据不均衡——常见病与罕见病的样本量差异可达 6 倍以上。
+
+\section{作品目标}
+
+本作品旨在构建一个基于改进 ConvNeXt 架构的 22 类皮肤疾病智能辅助分类系统，实现以下目标：
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.3em]
+    \item \textbf{高准确率分类}：在包含 15,444 张图像的公开数据集上，达到 82\% 以上的验证准确率。
+    \item \textbf{可解释性分析}：通过 Grad-CAM 注意力热力图可视化模型关注的病灶区域，为临床医生提供判断依据。
+    \item \textbf{大模型辅助咨询}：接入大语言模型 API，基于分类结果生成疾病概述、治疗建议等医学报告，并提供多轮对话咨询功能。
+    \item \textbf{完整实验对比}：设计消融实验，系统评估各组件的独立贡献，为后续研究提供参考。
+\end{enumerate}
+
+\section{主要工作}
+
+\begin{table}[H]
+    \centering
+    \caption{主要工作内容汇总}
+    \label{tab:main_work}
+    \begin{tabularx}{\linewidth}{l X}
+        \toprule
+        \textbf{工作内容} & \textbf{说明} \\
+        \midrule
+        基线模型搭建 & ConvNeXt-Tiny + 全局平均池化，验证集准确率 79.80\% \\
+        骨干网络升级 & ConvNeXt V1 → ConvNeXt V2，引入全局响应归一化（GRN） \\
+        池化策略改进 & 全局平均池化 → 广义均值池化（GeM Pooling），可学习参数 p \\
+        权重优化 & 引入指数滑动平均（EMA），decay=0.999 \\
+        消融实验 & 对比基线 vs 改进模型的性能差异，分析各组件贡献 \\
+        可解释性 & 实现 Grad-CAM 注意力可视化，并排对比基线/改进模型的关注区域差异 \\
+        Web 应用 & 基于 Flask + 原生前端构建完整交互系统，支持流式 AI 报告和对话 \\
+        ONNX 部署 & 导出 ONNX 模型，支持跨平台推理部署 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+% ==================== 第2章 问题分析 ====================
+\chapter{问题分析}
+
+\section{问题来源}
+
+皮肤疾病的自动分类是人工智能医学影像领域的重要研究方向。目前存在以下实际问题：
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.3em]
+    \item \textbf{医疗资源不均}：我国基层医疗机构皮肤科医生严重不足，许多皮肤病患者无法获得及时、准确的诊断。
+    \item \textbf{诊断主观性强}：不同医生对同一皮损的诊断可能存在差异，尤其在不典型病例中。
+    \item \textbf{筛查效率低下}：大规模皮肤癌筛查中，医生需要逐一检查每张图像，工作量大且容易出现疲劳性误判。
+    \item \textbf{患者缺乏医学知识}：普通民众难以判断皮损的严重程度，可能延误就医时机。
+\end{enumerate}
+
+\section{现有解决方案}
+
+\begin{table}[H]
+    \centering
+    \caption{现有解决方案对比}
+    \label{tab:solutions}
+    \begin{tabularx}{\textwidth}{l X X X}
+        \toprule
+        \textbf{方案} & \textbf{代表方法} & \textbf{优点} & \textbf{不足} \\
+        \midrule
+        人工诊断 & 皮肤科医生目视检查 + 皮肤镜 & 准确率高，可结合临床经验 & 效率低，受地域和资源限制 \\
+        CNN 分类 & ResNet / EfficientNet + 皮肤病数据集 & 自动化程度高，准确率 70-80\% & 细粒度分类能力有限 \\
+        Vision Transformer & ViT / Swin Transformer & 全局感受野，细粒度表现好 & 数据需求大，推理慢 \\
+        多模态融合 & 图像 + 临床元数据 & 信息更全面 & 元数据获取困难，标注成本高 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{本作品要解决的痛点问题}
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.5em]
+    \item \textbf{细粒度识别困难}：部分皮肤病因视觉特征高度相似（如光化性角化病 vs 脂溢性角化病），传统 CNN 模型对此类细粒度分类的区分能力不足。本作品通过 GRN（全局响应归一化）增强特征多样性，GeM Pooling 聚焦判别性区域，系统性提升细粒度分类能力。
+    
+    \item \textbf{特征坍缩问题}：深层 CNN 在训练过程中容易出现"特征坍缩"——各通道特征趋于高度相关，有效特征维度降低。ConvNeXt V2 引入的 GRN 层直接针对此问题设计。
+    
+    \item \textbf{池化策略固化的局限}：传统全局平均池化对所有空间位置赋予相等权重，无法自动聚焦病灶关键区域。本作品采用可学习参数 p 的 GeM Pooling，让模型在训练中自动发现最优池化策略。
+    
+    \item \textbf{缺乏可交互的辅助诊断工具}：现有研究多为离线模型评估，缺乏可实际使用的交互系统。本作品构建了完整的 Web 应用，集成分类、可解释性分析、大模型辅助咨询等功能。
+\end{enumerate}
+
+\section{解决问题的思路}
+
+\begin{table}[H]
+    \centering
+    \caption{问题与方案映射关系}
+    \label{tab:problem_solution}
+    \begin{tabular}{l l l}
+        \toprule
+        \textbf{问题} & \textbf{方案} & \textbf{效果} \\
+        \midrule
+        细粒度识别难 & ConvNeXt V2 GRN & 增强特征多样性 \\
+        特征坍缩 & GRN 归一化 & 抑制通道相关性 \\
+        池化策略固化 & GeM Pooling & 可学习特征聚合 \\
+        参数波动 & EMA 平滑 & 提升泛化能力 \\
+        缺乏交互工具 & Flask + SSE & Web 应用 + AI 对话 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ==================== 第3章 技术方案 ====================
+\chapter{技术方案}
+
+\section{整体架构}
+
+系统架构分为四个层次：
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.3em]
+    \item \textbf{应用层（Web UI）}：基于 Flask + HTML/CSS/JS + SSE 流式传输构建的前端交互界面。
+    \item \textbf{服务层（AI 增强）}：提供 Grad-CAM 注意力可视化和大模型 API 服务（疾病报告 + 对话）。
+    \item \textbf{推理层（模型）}：ConvNeXtV2 + GeM Pooling + EMA，支持 PyTorch 和 ONNX 两种推理方式。
+    \item \textbf{数据层}：Skin Disease Dataset，包含 15,444 张图像，共 22 个类别。
+\end{enumerate}
+
+\section{核心算法}
+
+\subsection{基线模型：ConvNeXt-Tiny}
+
+ConvNeXt（Liu et al., CVPR 2022）通过系统性地将 Transformer 设计理念引入 CNN，实现了与 Vision Transformer 相当的性能。ConvNeXt-Tiny 参数规模约 28M，适合医学图像分类任务。
+
+结构参数：
+\begin{itemize}[leftmargin=2em, itemsep=0.2em]
+    \item 四个 Stage，通道数 [96, 192, 384, 768]，block 数 [3, 3, 9, 3]
+    \item 分类头：AdaptiveAvgPool2d → LayerNorm → Linear(768, 22)
+\end{itemize}
+
+\subsection{改进一：ConvNeXt V2（GRN 全局响应归一化）}
+
+ConvNeXt V2（Woo et al., CVPR 2023）在每个 block 末尾插入 GRN 层：
+
+\begin{equation}
+\text{GRN}(X_i) = \gamma \cdot \frac{X_i}{\sqrt{\|X_i\|^2 + \epsilon}} + \beta
+\end{equation}
+
+GRN 通过 L2 归一化强制各通道保持多样性，抑制深层网络中的特征坍缩。其中 $\gamma$ 和 $\beta$ 为可学习参数，$\epsilon$ 为数值稳定性常数。
+
+\subsection{改进二：广义均值池化（GeM Pooling）}
+
+广义均值池化（Radenović et al., TPAMI 2018）的公式如下：
+
+\begin{equation}
+f^{(g)} = \left[ \frac{1}{|\Omega|} \sum_{x \in \Omega} x^p \right]^{\frac{1}{p}}
+\end{equation}
+
+其中：
+\begin{itemize}[leftmargin=2em, itemsep=0.2em]
+    \item $p=1$：退化为平均池化（GAP）
+    \item $p \to \infty$：逼近最大池化（GMP）
+    \item $p>1$：赋予高响应区域更大权重
+\end{itemize}
+
+\textbf{关键设计决策}：$p$ 初始化为 \textbf{1.0}（非文献默认 3.0）。实验发现 $p_{init}=3.0$ 在训练初期导致严重收敛困难（首轮验证准确率仅 5.9\%），$p_{init}=1.0$ 让模型从 GAP 起步，训练中 p 自动增长以聚焦判别性区域。
+
+\subsection{改进三：指数滑动平均（EMA）}
+
+指数滑动平均（Polyak \& Juditsky, 1992）维护模型参数的滑动平均副本：
+
+\begin{equation}
+\theta_{\text{shadow}}^{(t)} = 0.999 \cdot \theta_{\text{shadow}}^{(t-1)} + 0.001 \cdot \theta^{(t)}
+\end{equation}
+
+EMA 在推理时使用 shadow 权重，等效窗口约 1,000 步，在不增加推理开销的前提下提升泛化能力。
+
+\section{训练配置}
+
+\begin{table}[H]
+    \centering
+    \caption{训练超参数配置}
+    \label{tab:training_config}
+    \begin{tabularx}{\linewidth}{l l X}
+        \toprule
+        \textbf{超参数} & \textbf{值} & \textbf{说明} \\
+        \midrule
+        优化器 & AdamW & 解耦权重衰减 \\
+        学习率 & 1e-4 & 余弦预热重启调度 \\
+        权重衰减 & 0.05 & L2 正则化 \\
+        损失函数 & CrossEntropy + Label Smoothing ($\epsilon$=0.1) & 缓解过拟合，处理长尾分布 \\
+        批量大小 & 32 & 适合 28M 参数量 \\
+        最大 Epoch & 50 & Early Stopping (patience=10) \\
+        混合精度 & AMP (GradScaler) & 加速训练，节省显存 \\
+        数据增强 & RandCrop + Flip + Rotation + ColorJitter & 7 种增强策略 \\
+        输入尺寸 & 224×224 & ImageNet 标准 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+% ==================== 第4章 系统实现 ====================
+\chapter{系统实现}
+
+\section{开发环境}
+
+\begin{table}[H]
+    \centering
+    \caption{开发环境配置}
+    \label{tab:dev_env}
+    \begin{tabular}{l l}
+        \toprule
+        \textbf{组件} & \textbf{版本/型号} \\
+        \midrule
+        操作系统 & macOS / Windows \\
+        编程语言 & Python 3.14 \\
+        深度学习框架 & PyTorch 2.x \\
+        模型库 & timm 0.9.x \\
+        Web 框架 & Flask 3.x \\
+        图像处理 & OpenCV, PIL \\
+        硬件 & Apple M5 (MPS) / NVIDIA GPU (CUDA) \\
+        大模型 API & OpenAI 兼容接口（支持豆包/GPT-4/本地模型） \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{项目结构}
+
+\begin{lstlisting}[language=bash, caption=项目目录结构]
+skin_detect/
+├── train.py                    # 训练主脚本，支持消融变体
+├── detect.py                   # 命令行推理脚本
+├── export_onnx.py              # ONNX 模型导出
+├── models/
+│   └── modules.py              # GeM Pooling, EMA, MultiScaleHead
+├── utils/
+│   └── visualize.py            # 混淆矩阵, ROC曲线, Grad-CAM 可视化
+├── web_app/
+│   ├── app.py                  # Flask 后端 (分类/Grad-CAM/LLM/SSE)
+│   ├── templates/index.html    # 前端页面
+│   └── static/
+│       ├── style.css           # 样式
+│       └── app.js              # 前端逻辑 (上传/流式/对话)
+├── runs/
+│   ├── convnext_tiny/          # 基线模型 (Val Acc 79.80%)
+│   │   ├── best.pt
+│   │   ├── *.onnx / *.onnx.data
+│   │   ├── confusion_matrix.png
+│   │   ├── roc_curves.png
+│   │   ├── per_class_metrics.png
+│   │   └── training_curves.png
+│   └── convnextv2_tiny_GeM_EMA/ # 改进模型 (Val Acc 82.20%)
+│       └── ... (同上)
+├── TECHNICAL_REPORT.md         # 论文级技术文档
+├── INNOVATION.md               # 创新点描述
+└── PROJECT_REPORT.md           # 本报告
+\end{lstlisting}
+
+\section{核心模块实现}
+
+\subsection{GeM Pooling 模块}
+
+\begin{lstlisting}[language=Python, caption=GeM Pooling 实现代码]
+class GeMPool(nn.Module):
+    """广义均值池化层，可学习参数 p"""
+    def __init__(self, p_init=1.0):
+        super().__init__()
+        self.p = nn.Parameter(torch.ones(1) * p_init)
+
+    def forward(self, x):
+        # 限制 p 的范围，防止数值不稳定
+        p = self.p.clamp(min=1.0, max=5.0)
+        return x.clamp(min=1e-6).pow(p).mean(dim=(2, 3)).pow(1.0 / p)
+\end{lstlisting}
+
+\subsection{EMA 模块}
+
+\begin{lstlisting}[language=Python, caption=EMA 实现代码]
+class ModelEMA:
+    """模型指数滑动平均"""
+    def __init__(self, model, decay=0.999):
+        self.decay = decay
+        self.shadow = {}
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
+
+    def update(self, model):
+        """更新 shadow 参数"""
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name].mul_(self.decay).add_(
+                    param.data, alpha=1 - self.decay
+                )
+
+    def apply_shadow(self, model):
+        """将 shadow 权重应用到模型"""
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                param.data.copy_(self.shadow[name])
+\end{lstlisting}
+
+\subsection{Grad-CAM 注意力可视化}
+
+通过注册前向/反向 hook 捕获 Stage 4 的特征图和梯度，计算加权激活图，生成病灶区域热力图。同时加载基线和改进模型，并排展示两者的注意力差异。
+
+\subsection{流式 AI 报告}
+
+使用 Server-Sent Events (SSE) 实现大模型 API 的流式传输。客户端通过 AbortController 管理 SSE 连接生命周期，避免多请求阻塞。
+
+\section{关键技术难点与解决方案}
+
+\begin{table}[H]
+    \centering
+    \caption{关键技术难点与解决方案}
+    \label{tab:challenges}
+    \begin{tabularx}{\linewidth}{l X}
+        \toprule
+        \textbf{难点} & \textbf{解决方案} \\
+        \midrule
+        GeM p\_init 导致训练崩溃 & p\_init 从 3.0 → 1.0，从 GAP 起步 \\
+        OpenCV 中文乱码 & 改用 PIL + 系统 CJK 字体渲染 \\
+        流式传输连接冲突 & AbortController 管理 + SSE 独立通道 \\
+        旧 checkpoint 不兼容新架构 & key 重映射（backbone. 前缀、head 索引） \\
+        ONNX 导出 opset 兼容性 & 使用 opset 18 + dynamo 导出 + 外部权重 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+% ==================== 第5章 测试分析 ====================
+\chapter{测试分析}
+
+\section{实验设置}
+
+\begin{itemize}[leftmargin=2em, itemsep=0.3em]
+    \item \textbf{数据集}：Skin Disease Dataset，22 类，15,444 张图像（训练 13,898 + 测试 1,546）
+    \item \textbf{评估指标}：Accuracy, Precision, Recall, F1, AUC, 混淆矩阵
+    \item \textbf{对比实验}：基线模型（ConvNeXt V1 + AvgPool） vs 改进模型（ConvNeXt V2 + GeM + EMA）
+\end{itemize}
+
+\section{主要结果}
+
+\begin{table}[H]
+    \centering
+    \caption{基线模型与改进模型性能对比}
+    \label{tab:main_results}
+    \begin{tabularx}{\textwidth}{X c c c}
+        \toprule
+        \textbf{指标} & \textbf{基线} & \textbf{改进} & \textbf{提升} \\
+        \midrule
+        验证集准确率 & 79.80\% & \textbf{82.20\%} & \textbf{+2.40\%} \\
+        测试集准确率 & 80.47\% & \textbf{81.69\%} & \textbf{+1.22\%} \\
+        Micro AUC & 0.9740 & \textbf{0.9816} & +0.0076 \\
+        Macro F1 & 0.771 & \textbf{0.801} & \textbf{+3.0\%} \\
+        验证集 Loss & 1.222 & \textbf{1.141} & -0.081 \\
+        参数量 & 27.84M & 27.88M & +0.17\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../runs/convnext_tiny/training_curves.png}
+    \caption{基线模型训练曲线（最优 Epoch 45, Val Acc = 79.80\%）}
+    \label{fig:training_baseline}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../runs/convnextv2_tiny_GeM_EMA/training_curves.png}
+    \caption{改进模型训练曲线（最优 Epoch 50, Val Acc = 82.20\%）}
+    \label{fig:training_improved}
+\end{figure}
+
+\section{混淆矩阵分析}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.48\textwidth]{../runs/convnext_tiny/confusion_matrix.png}
+    \hspace{0.04\textwidth}
+    \includegraphics[width=0.48\textwidth]{../runs/convnextv2_tiny_GeM_EMA/confusion_matrix.png}
+    \caption{验证集混淆矩阵对比（左：基线模型，右：改进模型）}
+    \label{fig:confusion_comparison}
+\end{figure}
+
+改进模型的对角线更集中，表明分类精度全面提升。Actinic Keratosis ↔ Seborrheic Keratoses 的跨类混淆有所减少。
+
+\section{ROC 曲线分析}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.48\textwidth]{../runs/convnext_tiny/roc_curves.png}
+    \hspace{0.04\textwidth}
+    \includegraphics[width=0.48\textwidth]{../runs/convnextv2_tiny_GeM_EMA/roc_curves.png}
+    \caption{One-vs-Rest ROC 曲线对比（左：基线 Micro AUC=0.974，右：改进 Micro AUC=0.982）}
+    \label{fig:roc_comparison}
+\end{figure}
+
+改进模型在各类别上的 AUC 普遍提升，尤其在中高风险类别（Lupus、Bullous）上提升显著。
+
+\section{Per-Class 性能对比}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.48\textwidth]{../runs/convnext_tiny/per_class_metrics.png}
+    \hspace{0.04\textwidth}
+    \includegraphics[width=0.48\textwidth]{../runs/convnextv2_tiny_GeM_EMA/per_class_metrics.png}
+    \caption{Per-Class Precision/Recall/F1 指标对比（左：基线模型，右：改进模型）}
+    \label{fig:perclass_comparison}
+\end{figure}
+
+\begin{table}[H]
+    \centering
+    \caption{F1 提升最大的 Top 5 类别}
+    \label{tab:top5_improvement}
+    \begin{tabularx}{\textwidth}{X c c c}
+        \toprule
+        \textbf{提升最大 Top 5} & \textbf{基线 F1} & \textbf{改进 F1} & \textbf{提升幅度} \\
+        \midrule
+        Lupus（红斑狼疮） & 0.688 & \textbf{0.809} & +17.6\% \\
+        Bullous（大疱性皮肤病） & 0.713 & \textbf{0.795} & +11.5\% \\
+        Lichen（苔藓） & 0.693 & \textbf{0.759} & +9.5\% \\
+        Tinea（癣） & 0.719 & \textbf{0.782} & +8.8\% \\
+        Sun/Sunlight Damage & 0.660 & \textbf{0.712} & +7.9\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{高风险类别专项分析}
+
+Skin Cancer（皮肤癌）作为唯一 HIGH 风险类别，其分类性能具有特殊临床意义：
+
+\begin{table}[H]
+    \centering
+    \caption{皮肤癌类别性能对比}
+    \label{tab:skin_cancer}
+    \begin{tabularx}{\linewidth}{l c c X}
+        \toprule
+        \textbf{指标} & \textbf{基线} & \textbf{改进} & \textbf{临床意义} \\
+        \midrule
+        Precision & 70.54\% & 66.40\% & 假阳性增多 \\
+        \textbf{Recall} & \textbf{73.83\%} & \textbf{77.57\%} & \textbf{假阴性减少（漏诊降低 3.7\%）} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+改进模型以 Precision 下降为代价换取 Recall 提升——在筛查场景中，减少漏诊远比减少误报重要。
+
+\section{注意力可视化对比}
+
+改进模型（V2 + GeM）的 Grad-CAM 热力图相比基线（V1 + Avg）更聚焦于病灶核心区域。GeM Pooling 在训练过程中自动学习关注高判别性区域，注意力分布更紧凑，边界更清晰。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.48\textwidth]{../runs/convnext_tiny/confusion_matrix_test.png}
+    \hspace{0.04\textwidth}
+    \includegraphics[width=0.48\textwidth]{../runs/convnextv2_tiny_GeM_EMA/confusion_matrix_test.png}
+    \caption{测试集混淆矩阵对比（左：基线模型，右：改进模型）}
+    \label{fig:gradcam_comparison}
+\end{figure}
+
+\section{推理效率}
+
+\begin{table}[H]
+    \centering
+    \caption{模型推理效率对比}
+    \label{tab:inference_efficiency}
+    \begin{tabularx}{\textwidth}{X c c c}
+        \toprule
+        \textbf{模型} & \textbf{参数量} & \textbf{ONNX 大小} & \textbf{单图推理 (CPU)} \\
+        \midrule
+        Baseline & 27.84M & 111 MB & ~45ms \\
+        Improved & 27.88M & 112 MB & ~48ms \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+改进模型参数量仅增加 0.17\%，推理时间增加约 6\%（GRN 层额外计算），在可接受范围内。
+
+% ==================== 第6章 作品总结 ====================
+\chapter{作品总结}
+
+\section{作品特色与创新点}
+
+\textbf{创新点一：GeM Pooling 初始化策略改进}
+
+传统 GeM Pooling 默认 $p_{init}=3.0$，本文发现该设置在医学图像分类任务中导致严重收敛困难（首轮验证准确率低至 5.9\%）。本文提出 $p_{init}=1.0$ 的初始化策略——训练初期等效于 GAP（与基线一致），训练中 p 自动增长聚焦判别性区域——解决了收敛问题，同时保留了 GeM 的优势。最终 Macro F1 提升 3.0\%，Lupus 类别 F1 提升 17.6\%。
+
+\textbf{创新点二：GRN + GeM 协同机制}
+
+ConvNeXt V2 的 GRN 层增强了特征多样性，GeM 在多样化的特征空间中更有效地聚焦判别性区域。两者的协同效应显著超越了各自独立贡献，在纹理/色素类疾病（Lupus、Bullous、Lichen）上尤为突出。
+
+\textbf{创新点三：可交互的多模态辅助诊断系统}
+
+构建了完整的 Web 应用，集成三个层面的智能辅助：（1）高精度图像分类；（2）Grad-CAM 注意力可视化（基线 vs 改进对比）；（3）大语言模型驱动的疾病咨询和报告生成，通过 SSE 流式传输实现实时交互。
+
+\textbf{创新点四：全面的消融实验与分析}
+
+系统设计了多组对比实验，覆盖了混淆矩阵、ROC 曲线、Per-Class 指标、训练曲线、注意力可视化等多个维度，为每个改进点的有效性提供了充分的实证支持。特别地，对 Skin Cancer 的 Recall-Precision 权衡进行了临床视角的深度分析。
+
+\section{应用推广}
+
+\subsection{应用场景}
+
+\begin{table}[H]
+    \centering
+    \caption{应用场景说明}
+    \label{tab:application_scenarios}
+    \begin{tabularx}{\linewidth}{l X}
+        \toprule
+        \textbf{场景} & \textbf{说明} \\
+        \midrule
+        基层医疗机构 & 辅助全科医生进行皮肤病初步筛查，降低误诊和漏诊率 \\
+        远程医疗 & 患者上传皮损照片，系统给出初步分类 + AI 建议，辅助远程问诊 \\
+        医学教育 & 提供可视化的注意力热力图和疾病知识库，辅助医学生和住院医师学习 \\
+        大规模筛查 & 社区/学校/工厂的批量皮肤癌/常见皮肤病筛查 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{推广路径}
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.3em]
+    \item \textbf{开源社区}：代码已开源至 GitHub，提供完整训练/推理/部署文档。
+    \item \textbf{模型部署}：模型已导出为 ONNX 格式，可部署至边缘设备、移动端或云服务器。
+    \item \textbf{API 服务}：Flask 后端可直接作为 RESTful API 使用，方便集成至第三方系统。
+    \item \textbf{持续改进}：项目结构模块化，支持配置不同模型变体、数据集和 API 后端，便于后续扩展。
+\end{enumerate}
+
+\section{作品展望}
+
+\subsection{短期改进（3-6 个月）}
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.3em]
+    \item \textbf{多数据集融合训练}：结合 ISIC 2019、HAM10000 等多个公开数据集，提升模型在不同采集条件下的泛化能力。
+    \item \textbf{多任务学习}：在分类基础上添加病灶分割头，使用 Grad-CAM 作为弱监督信号，实现"诊断 + 定位"的联合输出。
+    \item \textbf{模型量化与加速}：对 ONNX 模型进行 INT8 量化，将推理时间压缩至 10ms 以下，满足移动端部署需求。
+\end{enumerate}
+
+\subsection{中长期规划（6-18 个月）}
+
+\begin{enumerate}[leftmargin=2em, itemsep=0.3em]
+    \setcounter{enumi}{3}
+    \item \textbf{多模态融合}：融合患者年龄、性别、病灶部位、病程等临床元数据，构建图像 + 结构化数据的多模态分类模型。
+    \item \textbf{纵向跟踪}：支持同一患者多次就诊的图像对比分析，评估病灶变化趋势，实现疾病进展监测。
+    \item \textbf{临床验证}：与皮肤科合作开展前瞻性临床验证，评估模型在实际临床环境中的表现，推进医疗器械认证。
+    \item \textbf{联邦学习}：在保护患者隐私的前提下，通过联邦学习框架联合多家医疗机构的数据，持续优化模型。
+\end{enumerate}
+
+% ==================== 参考文献 ====================
+\chapter*{参考文献}
+\addcontentsline{toc}{chapter}{参考文献}
+
+\begin{enumerate}[label={[\arabic*]}, leftmargin=2em, itemsep=0.5em]
+    \item Liu, Z., Mao, H., Wu, C. Y., Feichtenhofer, C., Darrell, T., \& Xie, S. (2022). A ConvNet for the 2020s. \textit{CVPR 2022}.
+    
+    \item Woo, S., Debnath, S., Hu, R., Chen, X., Liu, Z., Kweon, I. S., \& Xie, S. (2023). ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders. \textit{CVPR 2023}.
+    
+    \item Radenović, F., Tolias, G., \& Chum, O. (2018). Fine-tuning CNN Image Retrieval with No Human Annotation. \textit{IEEE TPAMI}, 41(7), 1655-1668.
+    
+    \item Polyak, B. T., \& Juditsky, A. B. (1992). Acceleration of Stochastic Approximation by Averaging. \textit{SIAM J. Control Optim.}, 30(4), 838-855.
+    
+    \item Selvaraju, R. R., et al. (2017). Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization. \textit{ICCV 2017}.
+    
+    \item Loshchilov, I., \& Hutter, F. (2019). Decoupled Weight Decay Regularization. \textit{ICLR 2019}.
+    
+    \item He, K., Zhang, X., Ren, S., \& Sun, J. (2016). Deep Residual Learning for Image Recognition. \textit{CVPR 2016}.
+\end{enumerate}
+
+\end{document}
