@@ -35,44 +35,44 @@
 }
 .reveal .slides section {
   text-align: center;
-  padding: 12px 30px;
+  padding: 30px 60px;
 }
-.reveal h1 { font-size: 1.6em; font-weight: 700; margin-bottom: 8px; }
-.reveal h2 { font-size: 1.2em; font-weight: 600; color: var(--accent); margin-bottom: 12px; }
-.reveal h3 { font-size: .85em; color: var(--muted); font-weight: 400; margin-bottom: 6px; }
-.reveal p, .reveal li { font-size: .72em; line-height: 1.55; color: #ddd; }
+.reveal h1 { font-size: 3em; font-weight: 700; margin-bottom: 16px; }
+.reveal h2 { font-size: 2.2em; font-weight: 600; color: var(--accent); margin-bottom: 20px; }
+.reveal h3 { font-size: 1.4em; color: var(--muted); font-weight: 400; margin-bottom: 10px; }
+.reveal p, .reveal li { font-size: 1.05em; line-height: 1.5; color: #ddd; }
 .reveal ul { list-style: none; padding: 0; }
 .reveal ul li::before { content: "▸ "; color: var(--accent); }
-.reveal small { font-size: .65em; color: var(--muted); }
+.reveal small { font-size: .85em; color: var(--muted); }
 
 /* Tags */
-.tag { display:inline-block; padding:1px 8px; border-radius:8px; font-size:.65em; margin:1px; font-weight:500; }
+.tag { display:inline-block; padding:3px 14px; border-radius:12px; font-size:1em; margin:2px; font-weight:500; }
 .tag-r { background:#3a1a1a; color:var(--red); }
 .tag-y { background:#2a2a1a; color:var(--orange); }
 .tag-g { background:#1a2a1a; color:var(--green); }
 .tag-b { background:#1a2a3a; color:var(--accent); }
 
 /* Tables */
-.tbl { border-collapse:collapse; margin:4px auto; font-size:.65em; width:100%; max-width:600px; }
-.tbl th { background:var(--border); padding:3px 8px; font-weight:600; color:var(--accent); text-align:center; }
-.tbl td { padding:3px 8px; border-bottom:1px solid var(--border); text-align:center; }
+.tbl { border-collapse:collapse; margin:8px auto; font-size:1.1em; width:100%; max-width:900px; }
+.tbl th { background:var(--border); padding:8px 14px; font-weight:600; color:var(--accent); text-align:center; }
+.tbl td { padding:6px 14px; border-bottom:1px solid var(--border); text-align:center; }
 .tbl .up { color:var(--green); font-weight:600; }
 .tbl .dn { color:var(--red); }
 
 /* Cards grid */
-.cards { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin:6px 0; }
-.card { background:var(--card-bg); border:1px solid var(--border); border-radius:6px; padding:10px 12px; width:200px; text-align:left; }
-.card h4 { color:var(--accent); font-size:.72em; margin:0 0 2px 0; }
-.card p { font-size:.62em; color:var(--muted); line-height:1.4; margin:0; }
-.card .icon { font-size:1.2em; margin-bottom:2px; display:block; }
+.cards { display:flex; gap:20px; flex-wrap:wrap; justify-content:center; margin:12px 0; }
+.card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:20px 24px; width:320px; text-align:left; }
+.card h4 { color:var(--accent); font-size:1.1em; margin:0 0 4px 0; }
+.card p { font-size:.9em; color:var(--muted); line-height:1.4; margin:0; }
+.card .icon { font-size:1.8em; margin-bottom:6px; display:block; }
 
 /* Two-column */
-.cols { display:flex; gap:24px; align-items:center; justify-content:center; }
+.cols { display:flex; gap:40px; align-items:center; justify-content:center; }
 .col { flex:1; text-align:center; }
 
 /* Big numbers */
-.big { font-size:2.8em; font-weight:800; color:var(--green); line-height:1; }
-.big-sub { font-size:.7em; color:var(--muted); }
+.big { font-size:4em; font-weight:800; color:var(--green); line-height:1; }
+.big-sub { font-size:1em; color:var(--muted); }
 
 /* Highlight */
 .hl { color:var(--green); font-weight:600; }
@@ -80,11 +80,11 @@
 .hl-o { color:var(--orange); font-weight:600; }
 
 /* Formula */
-.formula { display:inline-block; padding:4px 14px; background:var(--card-bg); border-radius:4px; margin:4px 0; font-family:serif; font-style:italic; font-size:.8em; }
+.formula { display:inline-block; padding:10px 30px; background:var(--card-bg); border-radius:8px; margin:10px 0; font-family:serif; font-style:italic; font-size:1.2em; }
 
 /* Image preview */
-.img-preview { max-width:340px; max-height:260px; border-radius:6px; border:1px solid var(--border); }
-.img-compare { max-width:300px; max-height:230px; border-radius:6px; object-fit:contain; }
+.img-preview { max-width:600px; max-height:450px; border-radius:10px; border:2px solid var(--border); }
+.img-compare { max-width:520px; max-height:400px; border-radius:10px; object-fit:contain; }
 
 /* Gradient text */
 .grad { background:linear-gradient(135deg, var(--accent), var(--green)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:700; }
@@ -100,16 +100,16 @@
      S1: COVER
      ============================================================ -->
 <section>
-  <h1 class="grad" style="font-size:1.8em;">基于改进 ConvNeXt 的<br>多类别皮肤疾病智能分类系统</h1>
-  <p style="margin-top:6px;font-size:.75em;">22 类皮肤疾病 · Val Acc <span class="hl">82.20%</span> · Grad-CAM · AI 辅助诊断</p>
-  <div style="margin-top:16px;">
+  <h1 class="grad" style="font-size:3.2em;">基于改进 ConvNeXt 的<br>多类别皮肤疾病智能分类系统</h1>
+  <p style="margin-top:10px;font-size:1.2em;">22 类皮肤疾病 · Val Acc <span class="hl">82.20%</span> · Grad-CAM · AI 辅助诊断</p>
+  <div style="margin-top:24px;">
     <span class="tag tag-b">ConvNeXt V2</span>
     <span class="tag tag-g">GeM Pooling</span>
     <span class="tag tag-y">EMA</span>
     <span class="tag tag-b">Grad-CAM</span>
     <span class="tag tag-g">LLM 对话</span>
   </div>
-  <p style="margin-top:30px;font-size:.7em;color:var(--muted);">答辩演示 · 2026</p>
+  <p style="margin-top:40px;font-size:1em;color:var(--muted);">答辩演示 · 2026</p>
   <aside class="notes">开场：直接介绍题目和核心技术栈。如果老师问"做了什么"，回到这页。</aside>
 </section>
 
@@ -123,7 +123,7 @@
     <div class="card"><span class="icon">🏥</span><h4>医生严重短缺</h4><p>非洲部分地区每百万人口 < 1 名皮肤科医生，基层医院候诊 2-4h</p></div>
     <div class="card"><span class="icon">🔬</span><h4>诊断主观性</h4><p>不同医生对同一皮损诊断差异大，不典型病例易误判漏诊</p></div>
   </div>
-  <p class="fragment" style="margin-top:12px;font-size:.8em;"><b>核心问题：</b>如何用深度学习辅助皮肤疾病筛查，缓解医疗资源不均？</p>
+  <p class="fragment" style="margin-top:12px;font-size:1.25em;"><b>核心问题：</b>如何用深度学习辅助皮肤疾病筛查，缓解医疗资源不均？</p>
   <aside class="notes">为什么要做这个课题？三个数据说明问题：患者多、医生少、诊断主观。引出研究动机。</aside>
 </section>
 
@@ -139,7 +139,7 @@
     <tr><td>Vision Transformer</td><td>ViT / Swin</td><td>数据需求大、推理慢、部署难</td></tr>
     <tr><td>现有研究</td><td>离线模型评估</td><td>缺乏可交互的临床辅助工具</td></tr>
   </table>
-  <div class="fragment" style="margin-top:12px;padding:10px 16px;background:var(--card-bg);border-radius:6px;border-left:3px solid var(--accent);text-align:left;font-size:.8em;">
+  <div class="fragment" style="margin-top:12px;padding:10px 16px;background:var(--card-bg);border-radius:6px;border-left:3px solid var(--accent);text-align:left;font-size:1.25em;">
     <b>本作品要解决的四个问题：</b><br>
     ① 细粒度识别难 (光化性角化病 vs 脂溢性角化病) ② 深层 CNN 特征坍缩 ③ 池化策略固化 ④ 无可用交互系统
   </div>
@@ -163,10 +163,10 @@
       </table>
     </div>
     <div class="col">
-      <canvas id="chartDistribution" width="340" height="250"></canvas>
+      <canvas id="chartDistribution" width="600" height="400"></canvas>
     </div>
   </div>
-  <p style="font-size:.7em;color:var(--muted);margin-top:4px;">数据不均衡：最多 1,840 例 (正常) vs 最少 275 例 (念珠菌病)，相差 6.7×</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:4px;">数据不均衡：最多 1,840 例 (正常) vs 最少 275 例 (念珠菌病)，相差 6.7×</p>
   <aside class="notes">22类，1.5万张图。右边是数据分布图——可以看到明显长尾。使用Label Smoothing处理不均衡。</aside>
 </section>
 
@@ -175,7 +175,7 @@
      ============================================================ -->
 <section>
   <h2>技术路线总览</h2>
-  <div style="display:flex;flex-direction:column;align-items:center;gap:10px;font-size:.8em;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:10px;font-size:1.25em;">
     <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px 24px;width:450px;">📊 <b>数据层</b> · 15,444 张 · 22 类 · 7 种数据增强</div>
     <div style="color:var(--accent);font-size:1.2em;">⬇</div>
     <div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:8px;padding:10px 24px;width:450px;">🧠 <b>模型层 · 三项改进</b><br>ConvNeXt V2 (GRN) + GeM Pooling + EMA</div>
@@ -195,7 +195,7 @@
   <div class="cols">
     <div class="col">
       <h3 style="color:var(--muted)">基线 V1 + Avg</h3>
-      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:left;font-size:.7em;line-height:2;">
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:left;font-size:1em;line-height:2;">
         ConvNeXt V1<br>
         &nbsp;DWConv→LN→1×1→GELU→1×1<br>
         &nbsp;+ LayerScale + DropPath<br>
@@ -204,12 +204,12 @@
         ↓<br>
         LayerNorm → Linear(768,22)
       </div>
-      <p style="font-size:.7em;margin-top:4px;">27.84M · Val Acc 79.80%</p>
+      <p style="font-size:1em;margin-top:4px;">27.84M · Val Acc 79.80%</p>
     </div>
     <div style="color:var(--accent);font-size:2em;">→</div>
     <div class="col">
       <h3 style="color:var(--green)">改进 V2 + GeM + EMA</h3>
-      <div style="background:var(--card-bg);border:2px solid var(--green);border-radius:8px;padding:12px;text-align:left;font-size:.7em;line-height:2;">
+      <div style="background:var(--card-bg);border:2px solid var(--green);border-radius:8px;padding:12px;text-align:left;font-size:1em;line-height:2;">
         ConvNeXt <span class="hl">V2</span><br>
         &nbsp;... <span class="hl">+ GRN</span> ← 抑制特征坍缩<br>
         ↓<br>
@@ -217,7 +217,7 @@
         ↓<br>
         LN → Linear + <span class="hl">EMA</span>
       </div>
-      <p style="font-size:.7em;margin-top:4px;">27.88M · Val Acc <span class="hl">82.20%</span> (+2.4%)</p>
+      <p style="font-size:1em;margin-top:4px;">27.88M · Val Acc <span class="hl">82.20%</span> (+2.4%)</p>
     </div>
   </div>
   <aside class="notes">三个改动点：V1→V2 (加了GRN)，Avg→GeM (可学习p)，训练加EMA。参数基本不变，准确率提升2.4%。老师问"具体改了什么"翻这页。</aside>
@@ -234,7 +234,7 @@
     <div class="card"><h4>🛡️ 抑制坍缩</h4><p>强制各通道保持<br>不同的响应模式</p></div>
     <div class="card"><h4>🎯 突出显著性</h4><p>高激活区域被放大<br>背景噪声被抑制</p></div>
   </div>
-  <p style="font-size:.7em;color:var(--muted);margin-top:8px;">ConvNeXt V2 = V1 + GRN (每个 block 末尾) + FCMAE 自监督预训练 (60% 掩码)</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:8px;">ConvNeXt V2 = V1 + GRN (每个 block 末尾) + FCMAE 自监督预训练 (60% 掩码)</p>
   <aside class="notes">GRN的核心作用——在特征图每个空间位置沿通道做L2归一化。三个效果：增强多样性、抑制特征坍缩、突出重要区域。</aside>
 </section>
 
@@ -249,7 +249,7 @@
     <div class="card"><h4>p &gt; 1</h4><p>聚焦高响应区域<br>保留全局信息</p></div>
     <div class="card"><h4>p → ∞</h4><p>≡ 最大池化 (GMP)<br>仅保留最强位置</p></div>
   </div>
-  <div class="fragment" style="margin-top:10px;padding:10px 16px;background:#2a2a1a;border-radius:6px;border-left:3px solid var(--orange);text-align:left;font-size:.78em;">
+  <div class="fragment" style="margin-top:10px;padding:10px 16px;background:#2a2a1a;border-radius:6px;border-left:3px solid var(--orange);text-align:left;font-size:1em;">
     <span class="hl-o">⚡ 关键设计决策：</span>p<sub>init</sub> = <b>1.0</b> (非文献默认 3.0)<br>
     p=3 导致首轮 Val Acc 仅 <b>5.9%</b> → 随机特征的噪声被 GeM(p=3) 放大 → 收敛崩溃<br>
     p=1 从 GAP 起步 → 训练中 p 自动增长 → 首轮恢复到正常水平
@@ -268,7 +268,7 @@
     <div class="card"><h4>🔄 等价集成</h4><p>Polyak 平均在线近似<br>零额外推理开销</p></div>
     <div class="card"><h4>🎯 改善小样本</h4><p>小样本类别参数估计更稳定<br>Candidiasis (275例) F1 +4.2%</p></div>
   </div>
-  <p style="font-size:.7em;color:var(--muted);margin-top:8px;">decay 选择：0.99 (窗口100步 → 不够) | <b>0.999 (窗口1000步 → 最优)</b> | 0.9999 (窗口10000步 → 太慢)</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:8px;">decay 选择：0.99 (窗口100步 → 不够) | <b>0.999 (窗口1000步 → 最优)</b> | 0.9999 (窗口10000步 → 太慢)</p>
   <aside class="notes">EMA维护参数的滑动平均副本，推理时用shadow权重。decay选0.999是经验最优——平衡平滑度和响应速度。</aside>
 </section>
 
@@ -301,14 +301,14 @@
   <div class="cols">
     <div class="col">
       <img src="runs/convnext_tiny/training_curves.png" class="img-compare" onerror="this.style.display='none'" alt="训练曲线-基线">
-      <p style="font-size:.65em;color:var(--muted);">基线 · 最佳 Epoch 45</p>
+      <p style="font-size:1em;color:var(--muted);">基线 · 最佳 Epoch 45</p>
     </div>
     <div class="col">
       <img src="runs/convnextv2_tiny_GeM_EMA/training_curves.png" class="img-compare" onerror="this.style.display='none'" alt="训练曲线-改进">
-      <p style="font-size:.65em;color:var(--muted);">改进 · 最佳 Epoch 50</p>
+      <p style="font-size:1em;color:var(--muted);">改进 · 最佳 Epoch 50</p>
     </div>
   </div>
-  <p style="font-size:.7em;color:var(--muted);margin-top:6px;">改进模型初期收敛慢 (FCMAE预训练域偏移+GeM p增长) 但最终收敛到更高水平</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:6px;">改进模型初期收敛慢 (FCMAE预训练域偏移+GeM p增长) 但最终收敛到更高水平</p>
   <aside class="notes">训练曲线：改进模型初期慢但最终更高，验证了长期收益。</aside>
 </section>
 
@@ -319,11 +319,11 @@
   <h2>Per-Class 详细对比</h2>
   <div class="cols">
     <div class="col" style="flex:2;">
-      <canvas id="chartPerClass" width="500" height="280"></canvas>
+      <canvas id="chartPerClass" width="800" height="420"></canvas>
     </div>
-    <div class="col" style="flex:1;font-size:.7em;text-align:left;">
+    <div class="col" style="flex:1;font-size:1em;text-align:left;">
       <p><b>提升最大 Top 5：</b></p>
-      <table class="tbl" style="font-size:.85em;">
+      <table class="tbl" style="font-size:1em;">
         <tr><th>类别</th><th>基线 F1</th><th>改进 F1</th></tr>
         <tr><td>Lupus</td><td>0.688</td><td class="up">0.809</td></tr>
         <tr><td>Bullous</td><td>0.713</td><td class="up">0.795</td></tr>
@@ -333,7 +333,7 @@
       </table>
     </div>
   </div>
-  <p style="font-size:.65em;color:var(--muted);margin-top:4px;">纹理/色素类疾病提升最显著 — GRN 增强特征多样性 + GeM 聚焦病灶 = 协同效应</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:4px;">纹理/色素类疾病提升最显著 — GRN 增强特征多样性 + GeM 聚焦病灶 = 协同效应</p>
   <aside class="notes">Per-class结果。左边是22类的F1柱状图对比，右边是提升最大的5个。Lupus提升17.6%最显著。</aside>
 </section>
 
@@ -347,11 +347,11 @@
     <tr><td>Precision</td><td>70.54%</td><td class="dn">66.40%</td><td class="dn">-4.14%</td><td>假阳性增多 (误报↑)</td></tr>
     <tr><td><b>Recall</b></td><td>73.83%</td><td class="up"><b>77.57%</b></td><td class="up"><b>+3.74%</b></td><td><span class="hl">假阴性减少 (漏诊↓)</span></td></tr>
   </table>
-  <div style="margin-top:14px;padding:12px 20px;background:#3a1a1a;border-radius:8px;border-left:4px solid var(--red);text-align:left;font-size:.8em;">
+  <div style="margin-top:14px;padding:12px 20px;background:#3a1a1a;border-radius:8px;border-left:4px solid var(--red);text-align:left;font-size:1.25em;">
     <span class="hl-r">🏥 临床价值：</span>筛查场景中 <b>漏诊代价 >> 误报代价</b><br>
-    <span style="font-size:.85em;">假阳性 → 医生复核排除 (成本低) &nbsp;|&nbsp; 假阴性 → 延误治疗 (代价极高)</span>
+    <span style="font-size:1em;">假阳性 → 医生复核排除 (成本低) &nbsp;|&nbsp; 假阴性 → 延误治疗 (代价极高)</span>
   </div>
-  <p style="font-size:.7em;color:var(--muted);margin-top:6px;">改进模型以 Precision ↓4.1% 换取 Recall ↑3.7% — 更适合临床筛查场景</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:6px;">改进模型以 Precision ↓4.1% 换取 Recall ↑3.7% — 更适合临床筛查场景</p>
   <aside class="notes">Skin Cancer是高风险的唯一类别。改进模型用precision下降换recall提升——临床上漏诊比误报更危险。这是关键临床价值。</aside>
 </section>
 
@@ -363,18 +363,18 @@
   <div class="cols">
     <div class="col">
       <h3 style="color:var(--muted)">基线 (V1 + Avg)</h3>
-      <div style="width:280px;height:280px;background:var(--card-bg);border-radius:10px;display:flex;align-items:center;justify-content:center;margin:0 auto;color:var(--muted);font-size:.75em;text-align:center;">
+      <div style="width:280px;height:280px;background:var(--card-bg);border-radius:10px;display:flex;align-items:center;justify-content:center;margin:0 auto;color:var(--muted);font-size:1.15em;text-align:center;">
         🔥 注意力较分散<br><br>覆盖大片<br>正常皮肤区域
       </div>
     </div>
     <div class="col">
       <h3 style="color:var(--green)">改进 (V2 + GeM + EMA)</h3>
-      <div style="width:280px;height:280px;background:var(--card-bg);border-radius:10px;border:3px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto;color:var(--muted);font-size:.75em;text-align:center;">
+      <div style="width:280px;height:280px;background:var(--card-bg);border-radius:10px;border:3px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto;color:var(--muted);font-size:1.15em;text-align:center;">
         🔥 注意力更聚焦<br><br>精准定位<br>病灶核心区域
       </div>
     </div>
   </div>
-  <p style="font-size:.7em;color:var(--muted);margin-top:8px;">GeM Pooling 在训练中自动学习聚焦高判别性区域 → 注意力从分散到集中</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:8px;">GeM Pooling 在训练中自动学习聚焦高判别性区域 → 注意力从分散到集中</p>
   <aside class="notes">可解释性对比。改进模型的注意力更聚焦病灶核心——这就是GeM Pooling的效果。老师在问可解释性时翻这页。</aside>
 </section>
 
@@ -383,8 +383,8 @@
      ============================================================ -->
 <section>
   <h2>消融分析：组件贡献拆解</h2>
-  <canvas id="chartAblation" width="560" height="240"></canvas>
-  <p style="font-size:.75em;color:var(--muted);margin-top:6px;">GRN ≈ +1.2% &nbsp;|&nbsp; GeM ≈ +0.5% &nbsp;|&nbsp; EMA ≈ +0.7% &nbsp;|&nbsp; <span class="hl">协同效应 > 简单相加</span></p>
+  <canvas id="chartAblation" width="900" height="400"></canvas>
+  <p style="font-size:1.15em;color:var(--muted);margin-top:6px;">GRN ≈ +1.2% &nbsp;|&nbsp; GeM ≈ +0.5% &nbsp;|&nbsp; EMA ≈ +0.7% &nbsp;|&nbsp; <span class="hl">协同效应 > 简单相加</span></p>
   <aside class="notes">三个组件各自贡献约1.2%/0.5%/0.7%。协同效应大于简单相加——GRN增强特征多样性，GeM在多样化特征空间里更容易找到判别区域。</aside>
 </section>
 
@@ -399,7 +399,7 @@
     <div class="card"><span class="icon">🔥</span><h4>注意力对比</h4><p>基线 vs 改进<br>Grad-CAM 并排</p></div>
     <div class="card"><span class="icon">🤖</span><h4>AI 对话</h4><p>SSE 流式报告<br>多轮疾病咨询</p></div>
   </div>
-  <p style="font-size:.7em;color:var(--muted);margin-top:10px;">Flask + 原生 HTML/CSS/JS · SSE 流式传输 · AbortController 管理连接 · 自动检测已训练模型</p>
+  <p style="font-size:1em;color:var(--muted);margin-top:10px;">Flask + 原生 HTML/CSS/JS · SSE 流式传输 · AbortController 管理连接 · 自动检测已训练模型</p>
   <aside class="notes">系统展示。四个核心功能。技术栈：Flask后端+原生前端，SSE流式传输。</aside>
 </section>
 
@@ -436,9 +436,9 @@
      S19: THANK YOU
      ============================================================ -->
 <section>
-  <h1 class="grad" style="font-size:1.8em;">感谢聆听</h1>
-  <p style="font-size:1em;margin-top:8px;">请各位老师批评指正</p>
-  <div style="margin-top:20px;padding:12px 20px;background:var(--card-bg);border-radius:8px;display:inline-block;font-size:.8em;">
+  <h1 class="grad" style="font-size:3em;">感谢聆听</h1>
+  <p style="font-size:1em;margin-top:12px;">请各位老师批评指正</p>
+  <div style="margin-top:20px;padding:12px 20px;background:var(--card-bg);border-radius:8px;display:inline-block;font-size:1.25em;">
     GitHub: <b>https://github.com/yc004/skin_detect</b>
   </div>
   <div style="margin-top:16px;">
@@ -465,9 +465,9 @@ Reveal.initialize({
   center: true,
   controls: true,
   progress: true,
-  width: 960,
-  height: 540,
-  margin: 0.12,
+  width: 1920,
+  height: 1080,
+  margin: 0.08,
   plugins: [RevealHighlight, RevealNotes],
 });
 
