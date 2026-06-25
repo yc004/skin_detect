@@ -30,8 +30,12 @@ const btnClear = document.getElementById('btnClear');
 
 btnUpload.addEventListener('click', () => fileInput.click());
 
-uploadArea.addEventListener('click', (e) => {
-  if (e.target !== previewImage) fileInput.click();
+uploadArea.addEventListener('click', () => fileInput.click());
+
+// Clear button
+btnClear.addEventListener('click', (e) => {
+  e.stopPropagation();
+  resetAll();
 });
 
 uploadArea.addEventListener('dragover', (e) => {
@@ -88,6 +92,7 @@ function resetAll() {
   document.getElementById('resultPlaceholder').style.display = '';
   document.getElementById('aiReport').style.display = 'none';
   document.getElementById('aiReportContent').textContent = '';
+  document.getElementById('aiLoading').style.display = 'none';
   document.getElementById('chatMessages').innerHTML = '<div class="chat-placeholder">分类完成后可在此咨询AI</div>';
   document.getElementById('chatInput').disabled = true;
   document.getElementById('btnSend').disabled = true;
