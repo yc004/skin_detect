@@ -4,13 +4,12 @@
 
 let classificationCtx = null;  // Store classification context for chat
 
-// QR Code — generate from server-provided LAN URL
+// QR Code — uses LAN IP from server
 (function() {
   const qrImg = document.getElementById('qrImg');
-  if (qrImg) {
-    // Use the data-host-url attribute set by the template, or fall back to current origin
-    const url = document.body.getAttribute('data-host-url') || (window.location.origin + window.location.pathname);
-    qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(url);
+  const hostUrl = document.body.getAttribute('data-host-url');
+  if (qrImg && hostUrl) {
+    qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(hostUrl);
   }
 })();
 let activeAbortController = null;  // Cancel previous SSE streams

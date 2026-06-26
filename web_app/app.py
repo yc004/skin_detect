@@ -304,11 +304,36 @@ def _call_llm(messages: list, stream: bool = True):
 # Routes — Page
 # ============================================================
 
+def _get_lan_ip():
+    """Get LAN IP by querying the system's active network interface."""
+    import subprocess, platform
+    try:
+        if platform.system() == "Windows":
+            out = subprocess.check_output(
+                "powershell -c \"Get-NetIPAddress -AddressFamily IPv4 | Where-Object InterfaceAlias -notmatch 'Loopback' | Select-Object -First 1 -ExpandProperty IPAddress\"",
+                shell=True, text=True
+            )
+        else:
+            # macOS/Linux: get the primary interface IP
+            out = subprocess.check_output(
+                "ifconfig | grep 'inet ' | grep -v 127.0.0.1 | head -1 | awk '{print $2}'",
+                shell=True, text=True
+            )
+        ip = out.strip()
+        if ip and ip != "127.0.0.1":
+            return ip
+    except Exception:
+        pass
+    return "检测失败"
+
+
 @app.route("/")
 def index():
-    # Use the actual host the client is connecting from
-    host_url = f"{request.scheme}://{request.host}"
-    host_short = request.host
+    # LAN IP for QR code (must be reachable from other devices)
+    lan_ip = _get_lan_ip()
+    port = request.host.split(":")[-1] if ":" in request.host else "7860"
+    host_url = f"http://{lan_ip}:{port}"
+    host_short = f"{lan_ip}:{port}"
     return render_template("index.html",
                            llm_available=LLM_AVAILABLE,
                            model_info=MODEL_INFO,
