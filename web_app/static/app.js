@@ -4,11 +4,12 @@
 
 let classificationCtx = null;  // Store classification context for chat
 
-// QR Code — generate from current URL
+// QR Code — generate from server-provided LAN URL
 (function() {
-  const url = window.location.origin + window.location.pathname;
   const qrImg = document.getElementById('qrImg');
   if (qrImg) {
+    // Use the data-host-url attribute set by the template, or fall back to current origin
+    const url = document.body.getAttribute('data-host-url') || (window.location.origin + window.location.pathname);
     qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(url);
   }
 })();

@@ -304,11 +304,28 @@ def _call_llm(messages: list, stream: bool = True):
 # Routes — Page
 # ============================================================
 
+def _get_local_ip():
+    """Get the local network IP address."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
 @app.route("/")
 def index():
+    host_ip = _get_local_ip()
+    port = request.host.split(":")[-1] if ":" in request.host else "7860"
+    host_url = f"http://{host_ip}:{port}"
     return render_template("index.html",
                            llm_available=LLM_AVAILABLE,
-                           model_info=MODEL_INFO)
+                           model_info=MODEL_INFO,
+                           host_url=host_url)
 
 
 # ============================================================
