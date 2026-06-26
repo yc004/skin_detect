@@ -3,6 +3,15 @@
 // ============================================================
 
 let classificationCtx = null;  // Store classification context for chat
+
+// QR Code — generate from current URL
+(function() {
+  const url = window.location.origin + window.location.pathname;
+  const qrImg = document.getElementById('qrImg');
+  if (qrImg) {
+    qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(url);
+  }
+})();
 let activeAbortController = null;  // Cancel previous SSE streams
 let lastUploadedFile = null;  // Keep file reference for Grad-CAM re-fetch
 
@@ -228,7 +237,8 @@ async function streamAIReport(topPrediction) {
             const parsed = JSON.parse(data);
             if (parsed.token) {
               mdText += parsed.token;
-              contentDiv.innerHTML = marked.parse(mdText);
+              const render = typeof marked.parse === 'function' ? marked.parse : marked;
+              contentDiv.innerHTML = render(mdText);
             }
           } catch (e) { /* skip */ }
         }
@@ -311,7 +321,8 @@ async function sendChat() {
             const parsed = JSON.parse(data);
             if (parsed.token) {
               chatHistory[chatHistory.length - 1].content += parsed.token;
-              assistantDiv.innerHTML = marked.parse(chatHistory[chatHistory.length - 1].content);
+              const render = typeof marked.parse === 'function' ? marked.parse : marked;
+              assistantDiv.innerHTML = render(chatHistory[chatHistory.length - 1].content);
               chatMessages.scrollTop = chatMessages.scrollHeight;
             }
           } catch (e) { /* skip */ }

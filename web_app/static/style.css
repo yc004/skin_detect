@@ -26,6 +26,29 @@ body {
 header {
   text-align: center;
   padding: 16px 20px 8px;
+  position: relative;
+}
+
+/* QR Code */
+.qr-box {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+}
+.qr-box img {
+  width: 80px;
+  height: 80px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  display: block;
+}
+.qr-box span {
+  font-size: 10px;
+  color: var(--muted);
+  display: block;
+  margin-top: 2px;
 }
 header h1 {
   font-size: 22px;
