@@ -304,48 +304,11 @@ def _call_llm(messages: list, stream: bool = True):
 # Routes — Page
 # ============================================================
 
-def _get_local_ip():
-    """Get the local network IP address. Tries multiple methods."""
-    import socket, subprocess, platform
-    # Method 1: connect to external DNS (works on most systems)
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        if ip != "127.0.0.1":
-            return ip
-    except Exception:
-        pass
-    # Method 2: parse ifconfig/ipconfig
-    try:
-        if platform.system() == "Windows":
-            out = subprocess.check_output("ipconfig", shell=True, text=True)
-            for line in out.splitlines():
-                if "IPv4" in line and "192.168" in line:
-                    return line.split(":")[-1].strip()
-        else:
-            out = subprocess.check_output("ifconfig | grep 'inet ' | grep -v 127.0.0.1", shell=True, text=True)
-            for line in out.splitlines():
-                parts = line.strip().split()
-                for p in parts:
-                    if p.startswith("192.168.") or p.startswith("10.") or p.startswith("172."):
-                        return p
-    except Exception:
-        pass
-    # Method 3: hostname
-    try:
-        return socket.gethostbyname(socket.gethostname())
-    except Exception:
-        return "127.0.0.1"
-
-
 @app.route("/")
 def index():
-    host_ip = _get_local_ip()
-    port = request.host.split(":")[-1] if ":" in request.host else "7860"
-    host_url = f"http://{host_ip}:{port}"
-    host_short = f"{host_ip}:{port}"
+    # Use the actual host the client is connecting from
+    host_url = f"{request.scheme}://{request.host}"
+    host_short = request.host
     return render_template("index.html",
                            llm_available=LLM_AVAILABLE,
                            model_info=MODEL_INFO,
